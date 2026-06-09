@@ -203,12 +203,7 @@ html, body {
 }
 
 .tv-day-row.today {
-  background: #f8feff;
-}
-
-.tv-date.today-mark,
-.tv-wd.today-mark {
-  background: #e0faff;
+  background: #f0fcff;
   box-shadow: inset 0 0 0 3px var(--today-neon);
   position: relative;
   z-index: 1;
@@ -386,30 +381,35 @@ html, body {
 }
 
 .status-clock {
-  flex-shrink: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
-  padding: 4px 2px 6px;
+  padding: 8px 4px 10px;
   color: var(--text-dark);
-  line-height: 1.2;
+  line-height: 1.15;
 }
 
 .status-clock-date {
-  font-size: clamp(0.95rem, 1.6vw, 1.35rem);
+  font-size: clamp(1.15rem, 2.6vw, 2.1rem);
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .status-clock-time {
-  margin-top: 4px;
-  font-size: clamp(1.4rem, 2.8vw, 2.2rem);
+  margin-top: clamp(6px, 1.2vh, 14px);
+  font-size: clamp(2rem, 5vw, 3.8rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
 .status-image-wrap {
   container-type: size;
-  flex: 1;
+  flex: 4;
   width: 100%;
   min-height: 0;
   display: grid;

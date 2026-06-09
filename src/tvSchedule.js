@@ -107,11 +107,11 @@ function buildDayRow(dayInfo, today, onGradeHover) {
   row.dataset.lines = String(lineCount);
 
   const dateCell = document.createElement('div');
-  dateCell.className = `tv-date${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}${isToday ? ' today-mark' : ''}`;
+  dateCell.className = `tv-date${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}`;
   dateCell.textContent = dayInfo.day;
 
   const wdCell = document.createElement('div');
-  wdCell.className = `tv-wd${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}${isToday ? ' today-mark' : ''}`;
+  wdCell.className = `tv-wd${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}`;
   wdCell.textContent = dayInfo.weekday;
 
   const eventsCell = document.createElement('div');
