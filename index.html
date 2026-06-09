@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>제주과고 교무실 TV 게시판</title>
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <div id="app" class="board">
+  <aside class="calendar-panel">
+    <div id="pdf-viewer" class="schedule-panel"></div>
+    <footer class="calendar-toolbar">
+      <div class="color-legend">
+        <span class="legend-item color-blue">시험/평가</span>
+        <span class="legend-item color-green">입시/설명회</span>
+        <span class="legend-item color-yellow">행사/행정</span>
+        <span class="legend-item color-purple">학생활동</span>
+        <span class="legend-item color-pink">전일제</span>
+        <span class="legend-item color-red">공휴일</span>
+      </div>
+      <label class="upload-btn" title="PDF 업로드">
+        PDF
+        <input type="file" id="pdf-upload" accept=".pdf" hidden />
+      </label>
+    </footer>
+  </aside>
+
+  <aside class="status-panel">
+    <div class="status-image-wrap">
+      <div class="status-image-frame">
+        <img src="/assets/school-status.png" alt="제주과학고등학교 학생 현황" class="status-image" />
+        <div class="hotspot-layer">
+          <button class="hotspot" data-action="xroshot" style="left:4%;top:72%;width:30%;height:22%" title="xroshot.com"></button>
+          <button class="hotspot" data-action="wifi" style="left:34%;top:72%;width:32%;height:22%" title="학생용 Wifi"></button>
+          <button class="hotspot" data-action="happynet" style="left:66%;top:72%;width:30%;height:22%" title="해피넷"></button>
+        </div>
+        <div class="grade-highlight-layer">
+          <div class="grade-highlight" data-grade="1" style="top:24.5%;left:8%;width:84%;height:5.5%"></div>
+          <div class="grade-highlight" data-grade="2" style="top:37.5%;left:8%;width:84%;height:5.5%"></div>
+          <div class="grade-highlight" data-grade="3" style="top:50.5%;left:8%;width:84%;height:5.5%"></div>
+        </div>
+      </div>
+    </div>
+  </aside>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <div id="modal" class="modal hidden">
+    <div class="modal-box">
+      <p id="modal-text"></p>
+      <button id="modal-close">확인</button>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>

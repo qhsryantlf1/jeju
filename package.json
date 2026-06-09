@@ -1,0 +1,18 @@
+{
+  "name": "jeju-tv-bulletin",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "parse-pdf": "python scripts/parse-pdf.py",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^5.2.133"
+  },
+  "devDependencies": {
+    "vite": "^6.4.3"
+  }
+}
