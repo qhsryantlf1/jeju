@@ -82,18 +82,20 @@ function buildDayRow(dayInfo, today, onGradeHover) {
   const guides = dayInfo.lifeGuides || [];
   const isSaturday = dayInfo.weekday === '토';
   const isHoliday = events.some(isHolidayEvent);
-  const isToday = today === dayInfo.day;
+  const isToday = today
+    && today.day === dayInfo.day
+    && today.weekday === dayInfo.weekday;
   const lineCount = events.length;
 
   row.className = `tv-day-row${isToday ? ' today' : ''}${lineCount === 0 ? ' empty-day' : ' has-events'}`;
   row.dataset.lines = String(lineCount);
 
   const dateCell = document.createElement('div');
-  dateCell.className = `tv-date${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}`;
+  dateCell.className = `tv-date${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}${isToday ? ' today-mark' : ''}`;
   dateCell.textContent = dayInfo.day;
 
   const wdCell = document.createElement('div');
-  wdCell.className = `tv-wd${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}`;
+  wdCell.className = `tv-wd${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}${isToday ? ' today-mark' : ''}`;
   wdCell.textContent = dayInfo.weekday;
 
   const eventsCell = document.createElement('div');
@@ -200,10 +202,23 @@ function extractDeptName(raw) {
 
 function getToday(year, month) {
   const now = new Date();
-  if (now.getFullYear() === year && now.getMonth() + 1 === month) {
-    return now.getDate();
+  if (now.getFullYear() !== year || now.getMonth() + 1 !== month) {
+    return null;
   }
-  return null;
+  if (now.getDay() === 0) return null;
+
+  return {
+    day: now.getDate(),
+    weekday: WEEKDAYS[now.getDay()],
+  };
+}
+
+export function getScheduleOptions(meta = {}) {
+  const now = new Date();
+  return {
+    year: meta.year ?? now.getFullYear(),
+    month: meta.month ?? now.getMonth() + 1,
+  };
 }
 
 export { applyRowHeights };

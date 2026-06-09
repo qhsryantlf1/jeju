@@ -1,10 +1,14 @@
 import { loadCalendarData } from './pdfParser.js';
 import { saveUploadedCalendar, loadUploadedCalendar } from './calendarStorage.js';
-import { renderTvSchedule } from './tvSchedule.js';
+import { renderTvSchedule, getScheduleOptions } from './tvSchedule.js';
 
-const SCHEDULE_OPTIONS = { year: 2026, month: 6 };
+const WEEKDAY_LABELS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
 const pdfViewerEl = document.getElementById('pdf-viewer');
+const statusClockEl = document.getElementById('status-clock');
+let scheduleMeta = {};
+let lastTodayKey = '';
+let todayRefreshTimer = null;
 let currentBuffer = null;
 let cachedCalendarData = null;
 let useCachedLayout = true;
@@ -37,7 +41,8 @@ async function renderBoard(buffer, reparsing = true) {
         forceParse: !useCachedLayout,
       });
     }
-    renderTvSchedule(pdfViewerEl, cachedCalendarData, setGradeHighlight, SCHEDULE_OPTIONS);
+    renderTvSchedule(pdfViewerEl, cachedCalendarData, setGradeHighlight, getScheduleOptions(scheduleMeta));
+    lastTodayKey = new Date().toDateString();
   } catch (err) {
     console.error('게시판 렌더 실패:', err);
     showViewerError(err.message || '일정을 표시할 수 없습니다.');
@@ -45,7 +50,8 @@ async function renderBoard(buffer, reparsing = true) {
 }
 
 function renderCachedSchedule() {
-  renderTvSchedule(pdfViewerEl, cachedCalendarData, setGradeHighlight, SCHEDULE_OPTIONS);
+  renderTvSchedule(pdfViewerEl, cachedCalendarData, setGradeHighlight, getScheduleOptions(scheduleMeta));
+  lastTodayKey = new Date().toDateString();
 }
 
 async function init() {
@@ -53,6 +59,7 @@ async function init() {
     const stored = loadUploadedCalendar();
     if (stored) {
       cachedCalendarData = stored.data;
+      scheduleMeta = stored.meta ?? {};
       useCachedLayout = false;
       renderCachedSchedule();
       return;
@@ -78,7 +85,9 @@ async function handlePdfUpload(file) {
     const buffer = await file.arrayBuffer();
     currentBuffer = cloneBuffer(buffer);
     cachedCalendarData = await loadCalendarData(cloneBuffer(buffer), { forceParse: true, file });
-    saveUploadedCalendar(cachedCalendarData, { fileName: file.name });
+    const now = new Date();
+    scheduleMeta = { fileName: file.name, year: now.getFullYear(), month: now.getMonth() + 1 };
+    saveUploadedCalendar(cachedCalendarData, scheduleMeta);
     renderCachedSchedule();
     showToast(`${file.name} 업로드 완료`);
   } catch (err) {
@@ -141,7 +150,44 @@ modal.addEventListener('click', (e) => {
   if (e.target === modal) modal.classList.add('hidden');
 });
 
+function updateStatusClock() {
+  if (!statusClockEl) return;
+  const now = new Date();
+  const dateEl = statusClockEl.querySelector('.status-clock-date');
+  const timeEl = statusClockEl.querySelector('.status-clock-time');
+  if (dateEl) {
+    dateEl.textContent = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAY_LABELS[now.getDay()]}`;
+  }
+  if (timeEl) {
+    timeEl.textContent = now.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  }
+}
+
+function scheduleTodayRefresh() {
+  clearTimeout(todayRefreshTimer);
+  const now = new Date();
+  const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  todayRefreshTimer = setTimeout(() => {
+    if (cachedCalendarData) renderCachedSchedule();
+    scheduleTodayRefresh();
+  }, nextMidnight - now + 1000);
+}
+
+setInterval(() => {
+  const todayKey = new Date().toDateString();
+  if (todayKey !== lastTodayKey && cachedCalendarData) {
+    renderCachedSchedule();
+  }
+}, 60_000);
+
 setupHotspots();
+updateStatusClock();
+setInterval(updateStatusClock, 1000);
+scheduleTodayRefresh();
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
