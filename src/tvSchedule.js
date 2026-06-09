@@ -10,6 +10,7 @@ const DEPT_NAMES = [
 
 const MIN_LINE_H = 26;
 const MIN_DAY_ROW_H = 26;
+const COMPACT_ROW_H = 26;
 
 export function renderTvSchedule(container, dayData, onGradeHover, options = {}) {
   const year = options.year ?? 2026;
@@ -39,12 +40,17 @@ export function renderTvSchedule(container, dayData, onGradeHover, options = {})
 
   container.appendChild(root);
 
+  const titleEl = document.getElementById('schedule-title');
+  if (titleEl) titleEl.textContent = formatScheduleTitle(year, month);
+
   requestAnimationFrame(() => {
-    root.querySelectorAll('.tv-col').forEach((col, idx) => {
-      const body = col.querySelector('.tv-col-body');
-      applyRowHeights(body, idx === 0 ? leftDays : rightDays);
-    });
+    applyScheduleRowHeights(root, leftDays, rightDays);
+    requestAnimationFrame(() => applyUnifiedEventFontSize(root));
   });
+}
+
+function formatScheduleTitle(_calendarYear, month) {
+  return `${month}월 학사 운영 계획`;
 }
 
 function buildColumn(days, today, onGradeHover) {
@@ -80,9 +86,9 @@ function buildRowLines(dayInfo) {
   const depts = (dayInfo.departments || []).map(extractDeptName);
   const guides = dayInfo.lifeGuides || [];
 
-  if (events.length > 0) {
+  if (hasActivity(dayInfo)) {
     return events.map((event, idx) => ({
-      event,
+      event: event?.trim() ?? '',
       dept: depts[idx] ?? '',
       guide: guides[idx] ?? (guides.length === 1 ? guides[0] : ''),
     }));
@@ -93,17 +99,32 @@ function buildRowLines(dayInfo) {
     .map((guide) => ({ event: '', dept: '', guide }));
 }
 
+function hasActivity(dayInfo) {
+  return (dayInfo.events || []).some((event) => event?.trim());
+}
+
+function isCompactDay(dayInfo) {
+  return !hasActivity(dayInfo);
+}
+
+function isDepartureDay(dayInfo, lines) {
+  if (dayInfo.weekday === '토') return false;
+  return !lines.some((line) => line.guide?.trim());
+}
+
 function buildDayRow(dayInfo, today, onGradeHover) {
   const row = document.createElement('div');
   const lines = buildRowLines(dayInfo);
   const isSaturday = dayInfo.weekday === '토';
   const isHoliday = lines.some((line) => line.event && isHolidayEvent(line.event));
+  const isDeparture = isDepartureDay(dayInfo, lines);
+  const isCompact = isCompactDay(dayInfo);
   const isToday = today
     && today.day === dayInfo.day
     && today.weekday === dayInfo.weekday;
   const lineCount = lines.length;
 
-  row.className = `tv-day-row${isToday ? ' today' : ''}${lineCount === 0 ? ' empty-day' : ' has-events'}`;
+  row.className = `tv-day-row${isToday ? ' today' : ''}${isCompact ? ' compact-day' : ' has-events'}${isDeparture ? ' departure-day' : ''}`;
   row.dataset.lines = String(lineCount);
 
   const dateCell = document.createElement('div');
@@ -172,6 +193,73 @@ function buildDayRow(dayInfo, today, onGradeHover) {
   return row;
 }
 
+function applyScheduleRowHeights(root, leftDays, rightDays) {
+  const bodies = [...root.querySelectorAll('.tv-col-body')];
+  const bodyHeight = bodies[0]?.clientHeight ?? 0;
+  if (bodyHeight <= 0) return;
+
+  [
+    { body: bodies[0], days: leftDays },
+    { body: bodies[1], days: rightDays },
+  ].forEach(({ body, days }) => {
+    if (!body) return;
+
+    let compactCount = 0;
+    let activityUnits = 0;
+    for (const day of days) {
+      if (isCompactDay(day)) compactCount += 1;
+      else activityUnits += buildRowLines(day).length;
+    }
+
+    const remaining = Math.max(
+      bodyHeight - compactCount * COMPACT_ROW_H,
+      activityUnits * MIN_LINE_H,
+    );
+    const lineH = activityUnits > 0 ? remaining / activityUnits : MIN_LINE_H;
+
+    const rows = [...body.querySelectorAll('.tv-day-row')];
+    rows.forEach((row, i) => {
+      const day = days[i];
+      const lines = buildRowLines(day);
+
+      if (isCompactDay(day)) {
+        row.style.height = `${COMPACT_ROW_H}px`;
+        row.style.flex = 'none';
+
+        if (lines.length === 0) return;
+
+        const perLine = COMPACT_ROW_H / lines.length;
+        row.querySelectorAll('.tv-event, .tv-dept-line, .tv-guide-line').forEach((el) => {
+          el.style.height = `${perLine}px`;
+          el.style.minHeight = `${perLine}px`;
+          el.style.maxHeight = `${perLine}px`;
+          el.style.lineHeight = '1';
+        });
+        return;
+      }
+
+      const lc = lines.length;
+      const rowH = Math.max(lc * lineH, MIN_DAY_ROW_H);
+      const perLine = rowH / lc;
+      row.style.height = `${rowH}px`;
+      row.style.flex = 'none';
+
+      row.querySelectorAll('.tv-event, .tv-dept-line').forEach((el) => {
+        el.style.height = `${perLine}px`;
+        el.style.minHeight = `${perLine}px`;
+        el.style.maxHeight = `${perLine}px`;
+        el.style.lineHeight = '1';
+      });
+      row.querySelectorAll('.tv-guide-line').forEach((el) => {
+        el.style.height = `${perLine}px`;
+        el.style.minHeight = `${perLine}px`;
+        el.style.maxHeight = 'none';
+        el.style.lineHeight = '1.15';
+      });
+    });
+  });
+}
+
 function applyRowHeights(body, days) {
   if (!body) return;
   const bodyHeight = body.clientHeight;
@@ -204,7 +292,7 @@ function applyRowHeights(body, days) {
       el.style.height = `${perLine}px`;
       el.style.minHeight = `${perLine}px`;
       el.style.maxHeight = `${perLine}px`;
-      el.style.lineHeight = `${Math.max(perLine - 2, 14)}px`;
+      el.style.lineHeight = '1';
     });
     row.querySelectorAll('.tv-guide-line').forEach((el) => {
       el.style.height = `${perLine}px`;
@@ -213,6 +301,63 @@ function applyRowHeights(body, days) {
       el.style.lineHeight = '1.15';
     });
   });
+}
+
+function applyUnifiedEventFontSize(root) {
+  const items = [...root.querySelectorAll('.tv-event-text')]
+    .filter((textEl) => textEl.textContent?.trim())
+    .map((textEl) => ({
+      textEl,
+      cell: textEl.closest('.tv-event'),
+      text: textEl.textContent,
+    }))
+    .filter((item) => item.cell);
+
+  if (items.length === 0) return;
+
+  const fontFamily = getComputedStyle(items[0].textEl).fontFamily || 'sans-serif';
+  const unifiedSize = items.reduce((minSize, item) => {
+    const cellMax = maxFontSizeForCell(item.cell, item.text, fontFamily);
+    return Math.min(minSize, cellMax);
+  }, 22);
+
+  items.forEach(({ textEl }) => {
+    textEl.style.whiteSpace = 'nowrap';
+    textEl.style.overflow = 'hidden';
+    textEl.style.textOverflow = 'clip';
+    textEl.style.fontSize = `${unifiedSize}px`;
+    textEl.style.lineHeight = `${unifiedSize}px`;
+  });
+}
+
+function maxFontSizeForCell(cellEl, text, fontFamily) {
+  const maxW = cellEl.clientWidth - 6;
+  const maxH = cellEl.clientHeight - 2;
+  if (maxW <= 0 || maxH <= 0) return 9;
+
+  let lo = 9;
+  let hi = Math.floor(Math.min(maxH * 0.92, 22));
+  let best = lo;
+
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    const textW = measureTextWidth(text, mid, fontFamily);
+    if (textW <= maxW && mid <= maxH) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  return best;
+}
+
+function measureTextWidth(text, fontSize, fontFamily) {
+  const canvas = measureTextWidth._canvas ??= document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.font = `700 ${fontSize}px ${fontFamily}`;
+  return ctx.measureText(text).width;
 }
 
 function extractDeptName(raw) {
@@ -243,4 +388,4 @@ export function getScheduleOptions(meta = {}) {
   };
 }
 
-export { applyRowHeights };
+export { applyRowHeights, applyScheduleRowHeights };
