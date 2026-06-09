@@ -1,4 +1,4 @@
-import { list, put } from '@vercel/blob';
+import { get, put } from '@vercel/blob';
 
 const BLOB_PATH = 'calendar/current.json';
 
@@ -10,13 +10,11 @@ function sendJson(res, status, payload) {
 }
 
 async function loadSharedCalendar() {
-  const { blobs } = await list({ prefix: 'calendar/', limit: 10 });
-  const blob = blobs.find((item) => item.pathname === BLOB_PATH);
-  if (!blob) return null;
+  const result = await get(BLOB_PATH, { access: 'private' });
+  if (!result || result.statusCode !== 200) return null;
 
-  const response = await fetch(blob.url, { cache: 'no-store' });
-  if (!response.ok) return null;
-  return response.json();
+  const text = await new Response(result.stream).text();
+  return JSON.parse(text);
 }
 
 export default async function handler(req, res) {
@@ -66,7 +64,7 @@ export default async function handler(req, res) {
       };
 
       await put(BLOB_PATH, JSON.stringify(stored), {
-        access: 'public',
+        access: 'private',
         contentType: 'application/json',
         addRandomSuffix: false,
         allowOverwrite: true,
@@ -75,8 +73,8 @@ export default async function handler(req, res) {
       sendJson(res, 200, { ok: true, savedAt: stored.savedAt });
     } catch (err) {
       const message = err.message || '일정 저장 실패';
-      const hint = message.includes('token') || message.includes('BLOB')
-        ? 'Vercel 대시보드에서 Blob Storage를 연결해 주세요.'
+      const hint = /token|credential|unauthorized|authentication/i.test(message)
+        ? 'Vercel 대시보드에서 Blob Storage를 연결한 뒤 재배포해 주세요.'
         : message;
       sendJson(res, 500, { error: hint });
     }
