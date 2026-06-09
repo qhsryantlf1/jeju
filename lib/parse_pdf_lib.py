@@ -6,6 +6,14 @@ import pdfplumber
 
 def expand_slash(events, depts, guides):
     out_e, out_d, out_g = [], [], []
+    if not events:
+        active_guides = [g for g in guides if g and str(g).strip()]
+        for guide in active_guides:
+            out_e.append("")
+            out_d.append("")
+            out_g.append(guide)
+        return out_e, out_d, out_g
+
     for i, ev in enumerate(events):
         dept = depts[i] if i < len(depts) else (depts[0] if len(depts) == 1 else "")
         guide = guides[i] if i < len(guides) else (guides[0] if len(guides) == 1 else "")

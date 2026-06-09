@@ -8,6 +8,17 @@ export function expandDayEvents(day) {
   const rawDepts = day.departments || [];
   const rawGuides = day.lifeGuides || [];
 
+  if (rawEvents.length === 0) {
+    rawGuides
+      .filter((guide) => guide?.trim())
+      .forEach((guide) => {
+        events.push('');
+        departments.push('');
+        lifeGuides.push(guide);
+      });
+    return { ...day, events, departments, lifeGuides };
+  }
+
   rawEvents.forEach((event, idx) => {
     const dept = rawDepts[idx] ?? (rawDepts.length === 1 ? rawDepts[0] : '');
     const guide = rawGuides[idx] ?? (rawGuides.length === 1 ? rawGuides[0] : '');

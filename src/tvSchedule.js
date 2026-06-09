@@ -75,17 +75,33 @@ function buildColumn(days, today, onGradeHover) {
   return col;
 }
 
-function buildDayRow(dayInfo, today, onGradeHover) {
-  const row = document.createElement('div');
+function buildRowLines(dayInfo) {
   const events = dayInfo.events || [];
   const depts = (dayInfo.departments || []).map(extractDeptName);
   const guides = dayInfo.lifeGuides || [];
+
+  if (events.length > 0) {
+    return events.map((event, idx) => ({
+      event,
+      dept: depts[idx] ?? '',
+      guide: guides[idx] ?? (guides.length === 1 ? guides[0] : ''),
+    }));
+  }
+
+  return guides
+    .filter((guide) => guide?.trim())
+    .map((guide) => ({ event: '', dept: '', guide }));
+}
+
+function buildDayRow(dayInfo, today, onGradeHover) {
+  const row = document.createElement('div');
+  const lines = buildRowLines(dayInfo);
   const isSaturday = dayInfo.weekday === '토';
-  const isHoliday = events.some(isHolidayEvent);
+  const isHoliday = lines.some((line) => line.event && isHolidayEvent(line.event));
   const isToday = today
     && today.day === dayInfo.day
     && today.weekday === dayInfo.weekday;
-  const lineCount = events.length;
+  const lineCount = lines.length;
 
   row.className = `tv-day-row${isToday ? ' today' : ''}${lineCount === 0 ? ' empty-day' : ' has-events'}`;
   row.dataset.lines = String(lineCount);
@@ -101,22 +117,26 @@ function buildDayRow(dayInfo, today, onGradeHover) {
   const eventsCell = document.createElement('div');
   eventsCell.className = 'tv-events';
 
-  events.forEach((title) => {
-    const color = getEventColor(title);
-    const grade = extractGrade(title);
-
+  lines.forEach((line) => {
     const ev = document.createElement('div');
-    ev.className = `tv-event${color !== 'default' ? ` color-${color}` : ''}`;
+    const title = line.event?.trim() ?? '';
+    if (title) {
+      const color = getEventColor(title);
+      const grade = extractGrade(title);
+      ev.className = `tv-event${color !== 'default' ? ` color-${color}` : ''}`;
 
-    const text = document.createElement('span');
-    text.className = 'tv-event-text';
-    text.textContent = title;
-    text.title = title;
-    ev.appendChild(text);
+      const text = document.createElement('span');
+      text.className = 'tv-event-text';
+      text.textContent = title;
+      text.title = title;
+      ev.appendChild(text);
 
-    if (grade) {
-      ev.addEventListener('mouseenter', () => onGradeHover?.(grade));
-      ev.addEventListener('mouseleave', () => onGradeHover?.(null));
+      if (grade) {
+        ev.addEventListener('mouseenter', () => onGradeHover?.(grade));
+        ev.addEventListener('mouseleave', () => onGradeHover?.(null));
+      }
+    } else {
+      ev.className = 'tv-event tv-event-blank';
     }
 
     eventsCell.appendChild(ev);
@@ -124,26 +144,28 @@ function buildDayRow(dayInfo, today, onGradeHover) {
 
   const deptCell = document.createElement('div');
   deptCell.className = 'tv-dept';
-  events.forEach((_, idx) => {
-    const dept = depts[idx] ?? '';
-    if (!dept) return;
-    const line = document.createElement('span');
-    line.className = 'tv-dept-line';
-    line.textContent = dept;
-    line.title = dept;
-    deptCell.appendChild(line);
+  lines.forEach((line) => {
+    const dept = line.dept?.trim() ?? '';
+    const el = document.createElement('span');
+    el.className = 'tv-dept-line';
+    if (dept) {
+      el.textContent = dept;
+      el.title = dept;
+    }
+    deptCell.appendChild(el);
   });
 
   const guideCell = document.createElement('div');
   guideCell.className = 'tv-guide';
-  events.forEach((_, idx) => {
-    const guide = guides[idx] ?? '';
-    if (!guide) return;
-    const line = document.createElement('span');
-    line.className = 'tv-guide-line';
-    line.textContent = guide;
-    line.title = guide;
-    guideCell.appendChild(line);
+  lines.forEach((line) => {
+    const guide = line.guide?.trim() ?? '';
+    const el = document.createElement('span');
+    el.className = 'tv-guide-line';
+    if (guide) {
+      el.textContent = guide;
+      el.title = guide;
+    }
+    guideCell.appendChild(el);
   });
 
   row.append(dateCell, wdCell, eventsCell, deptCell, guideCell);
@@ -156,7 +178,7 @@ function applyRowHeights(body, days) {
   if (bodyHeight <= 0) return;
 
   const rows = [...body.querySelectorAll('.tv-day-row')];
-  const lineCounts = days.map((d) => d.events?.length || 0);
+  const lineCounts = days.map((d) => buildRowLines(d).length);
   const unitCounts = lineCounts.map((c) => (c === 0 ? 1 : c));
   const totalUnits = unitCounts.reduce((s, c) => s + c, 0);
   const lineH = totalUnits > 0
