@@ -83,8 +83,9 @@ async function handlePdfUpload(file) {
     showToast(`${file.name} 업로드 완료`);
   } catch (err) {
     console.error('PDF 업로드 실패:', err);
-    showViewerError(err.message || 'PDF를 인식하지 못했습니다.');
-    showToast('PDF 인식 실패');
+    const msg = err.message || 'PDF를 인식하지 못했습니다.';
+    showViewerError(msg);
+    showToast(msg.length > 40 ? 'PDF 인식 실패' : msg);
   }
   pdfUpload.value = '';
 }
