@@ -7,6 +7,7 @@
     "parse-pdf": "python scripts/parse-pdf.py",
     "dev": "vite",
     "build": "vite build",
+    "vercel-build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {

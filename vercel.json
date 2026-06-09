@@ -1,12 +1,12 @@
 {
-  "buildCommand": "npm run build",
-  "outputDirectory": "dist",
-  "functions": {
-    "api/index.py": {
-      "maxDuration": 60
-    }
-  },
-  "rewrites": [
-    { "source": "/((?!assets/|api/).*)", "destination": "/index.html" }
+  "version": 2,
+  "builds": [
+    { "src": "api/parse-pdf.py", "use": "@vercel/python" },
+    { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
+  ],
+  "routes": [
+    { "src": "/api/parse-pdf", "methods": ["GET", "POST", "OPTIONS"], "dest": "api/parse-pdf.py" },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

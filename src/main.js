@@ -77,7 +77,7 @@ async function handlePdfUpload(file) {
     pdfViewerEl.innerHTML = '<div class="viewer-loading">PDF 분석 중...</div>';
     const buffer = await file.arrayBuffer();
     currentBuffer = cloneBuffer(buffer);
-    cachedCalendarData = await loadCalendarData(cloneBuffer(buffer), { forceParse: true });
+    cachedCalendarData = await loadCalendarData(cloneBuffer(buffer), { forceParse: true, file });
     saveUploadedCalendar(cachedCalendarData, { fileName: file.name });
     renderCachedSchedule();
     showToast(`${file.name} 업로드 완료`);
