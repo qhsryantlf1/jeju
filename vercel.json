@@ -2,10 +2,12 @@
   "version": 2,
   "builds": [
     { "src": "api/parse-pdf.py", "use": "@vercel/python" },
+    { "src": "api/calendar.js", "use": "@vercel/node" },
     { "src": "package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
   ],
   "routes": [
     { "src": "/api/parse-pdf", "methods": ["GET", "POST", "OPTIONS"], "dest": "api/parse-pdf.py" },
+    { "src": "/api/calendar", "methods": ["GET", "POST", "OPTIONS"], "dest": "api/calendar.js" },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]

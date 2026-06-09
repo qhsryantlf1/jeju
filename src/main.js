@@ -1,5 +1,6 @@
 import { loadCalendarData } from './pdfParser.js';
 import { saveUploadedCalendar, loadUploadedCalendar } from './calendarStorage.js';
+import { fetchSharedCalendar, saveSharedCalendar } from './calendarServer.js';
 import { renderTvSchedule, getScheduleOptions } from './tvSchedule.js';
 
 const WEEKDAY_LABELS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
@@ -12,11 +13,13 @@ let todayRefreshTimer = null;
 let currentBuffer = null;
 let cachedCalendarData = null;
 let useCachedLayout = true;
+let sharedSavedAt = 0;
 
 function cloneBuffer(buffer) {
   return buffer.slice(0);
 }
 const pdfUpload = document.getElementById('pdf-upload');
+const fullscreenBtn = document.getElementById('fullscreen-btn');
 const toast = document.getElementById('toast');
 const modal = document.getElementById('modal');
 const modalText = document.getElementById('modal-text');
@@ -54,12 +57,34 @@ function renderCachedSchedule() {
   lastTodayKey = new Date().toDateString();
 }
 
+function applySharedCalendar(shared) {
+  cachedCalendarData = shared.data;
+  scheduleMeta = shared.meta ?? {};
+  sharedSavedAt = shared.savedAt ?? 0;
+  useCachedLayout = false;
+  saveUploadedCalendar(cachedCalendarData, scheduleMeta);
+  renderCachedSchedule();
+}
+
 async function init() {
   try {
+    pdfViewerEl.innerHTML = '<div class="viewer-loading">일정 불러오는 중...</div>';
+
+    try {
+      const shared = await fetchSharedCalendar();
+      if (shared?.data?.length) {
+        applySharedCalendar(shared);
+        return;
+      }
+    } catch (err) {
+      console.warn('서버 일정 로드 실패:', err);
+    }
+
     const stored = loadUploadedCalendar();
     if (stored) {
       cachedCalendarData = stored.data;
       scheduleMeta = stored.meta ?? {};
+      sharedSavedAt = stored.savedAt ?? 0;
       useCachedLayout = false;
       renderCachedSchedule();
       return;
@@ -87,9 +112,11 @@ async function handlePdfUpload(file) {
     cachedCalendarData = await loadCalendarData(cloneBuffer(buffer), { forceParse: true, file });
     const now = new Date();
     scheduleMeta = { fileName: file.name, year: now.getFullYear(), month: now.getMonth() + 1 };
+    await saveSharedCalendar({ data: cachedCalendarData, meta: scheduleMeta });
     saveUploadedCalendar(cachedCalendarData, scheduleMeta);
+    sharedSavedAt = Date.now();
     renderCachedSchedule();
-    showToast(`${file.name} 업로드 완료`);
+    showToast(`${file.name} 업로드 완료 (전체 공유)`);
   } catch (err) {
     console.error('PDF 업로드 실패:', err);
     const msg = err.message || 'PDF를 인식하지 못했습니다.';
@@ -145,6 +172,45 @@ pdfUpload.addEventListener('change', (e) => {
   if (file) handlePdfUpload(file);
 });
 
+function isFullscreenActive() {
+  return Boolean(
+    document.fullscreenElement
+    || document.webkitFullscreenElement
+    || document.msFullscreenElement,
+  );
+}
+
+function updateFullscreenButton() {
+  if (!fullscreenBtn) return;
+  const active = isFullscreenActive();
+  fullscreenBtn.textContent = active ? '나가기' : '전체화면';
+  fullscreenBtn.title = active ? '전체화면 나가기 (Esc)' : '전체화면 (F11)';
+}
+
+async function toggleFullscreen() {
+  try {
+    if (isFullscreenActive()) {
+      if (document.exitFullscreen) await document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+      else if (document.msExitFullscreen) document.msExitFullscreen();
+    } else {
+      const el = document.documentElement;
+      if (el.requestFullscreen) await el.requestFullscreen();
+      else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+      else if (el.msRequestFullscreen) el.msRequestFullscreen();
+      else showToast('이 브라우저는 전체화면을 지원하지 않습니다');
+    }
+  } catch (err) {
+    console.warn('전체화면 전환 실패:', err);
+    showToast('전체화면을 사용할 수 없습니다');
+  }
+}
+
+fullscreenBtn?.addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', updateFullscreenButton);
+document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+updateFullscreenButton();
+
 modalClose.addEventListener('click', () => modal.classList.add('hidden'));
 modal.addEventListener('click', (e) => {
   if (e.target === modal) modal.classList.add('hidden');
@@ -181,6 +247,19 @@ setInterval(() => {
   const todayKey = new Date().toDateString();
   if (todayKey !== lastTodayKey && cachedCalendarData) {
     renderCachedSchedule();
+  }
+}, 60_000);
+
+setInterval(async () => {
+  try {
+    const shared = await fetchSharedCalendar();
+    if (!shared?.data?.length) return;
+    const savedAt = shared.savedAt ?? 0;
+    if (savedAt > sharedSavedAt) {
+      applySharedCalendar(shared);
+    }
+  } catch {
+    /* 서버 동기화 실패는 무시 */
   }
 }, 60_000);
 

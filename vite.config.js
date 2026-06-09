@@ -44,6 +44,70 @@ function runPdfParse(buffer) {
   });
 }
 
+const CALENDAR_FILE = path.join(__dirname, 'data', 'shared-calendar.json');
+
+function calendarApiPlugin() {
+  const handler = (req, res, next) => {
+    if (req.url !== '/api/calendar') {
+      next();
+      return;
+    }
+
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204;
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.end();
+      return;
+    }
+
+    if (req.method === 'GET') {
+      if (!fs.existsSync(CALENDAR_FILE)) {
+        res.statusCode = 404;
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.end(JSON.stringify({ error: '저장된 일정이 없습니다.' }));
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(fs.readFileSync(CALENDAR_FILE, 'utf8'));
+      return;
+    }
+
+    if (req.method === 'POST') {
+      const chunks = [];
+      req.on('data', (chunk) => chunks.push(chunk));
+      req.on('end', () => {
+        try {
+          fs.mkdirSync(path.dirname(CALENDAR_FILE), { recursive: true });
+          fs.writeFileSync(CALENDAR_FILE, Buffer.concat(chunks));
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ ok: true, savedAt: Date.now() }));
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json; charset=utf-8');
+          res.end(JSON.stringify({ error: err.message || '일정 저장 실패' }));
+        }
+      });
+      return;
+    }
+
+    next();
+  };
+
+  return {
+    name: 'calendar-api',
+    configureServer(server) {
+      server.middlewares.use(handler);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler);
+    },
+  };
+}
+
 /** 로컬 개발용 PDF 파싱 API (배포는 api/parse-pdf.py 서버리스 함수 사용) */
 function pdfParseApi() {
   const handler = (req, res, next) => {
@@ -80,6 +144,6 @@ function pdfParseApi() {
 }
 
 export default defineConfig({
-  plugins: [pdfParseApi()],
+  plugins: [pdfParseApi(), calendarApiPlugin()],
   server: { port: 5173, open: true },
 });
