@@ -108,6 +108,72 @@ function calendarApiPlugin() {
   };
 }
 
+const SHEET_SCRIPT = path.join(__dirname, 'scripts', 'fetch-sheet.py');
+
+function runSheetFetch() {
+  return new Promise((resolve, reject) => {
+    const proc = spawn('python', [SHEET_SCRIPT], {
+      cwd: __dirname,
+      windowsHide: true,
+      env: {
+        ...process.env,
+        PYTHONIOENCODING: 'utf-8',
+        PYTHONUTF8: '1',
+      },
+    });
+
+    const chunks = [];
+    let stderr = '';
+    proc.stdout.on('data', (chunk) => { chunks.push(chunk); });
+    proc.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+
+    proc.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(stderr.trim() || '구글 시트 불러오기에 실패했습니다.'));
+        return;
+      }
+
+      try {
+        const stdout = Buffer.concat(chunks).toString('utf8').trim();
+        resolve(JSON.parse(stdout));
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
+/** 로컬 개발용 구글 시트 API */
+function sheetCalendarApi() {
+  const handler = async (req, res, next) => {
+    if (req.url?.split('?')[0] !== '/api/sheet-calendar' || req.method !== 'GET') {
+      next();
+      return;
+    }
+
+    try {
+      const data = await runSheetFetch();
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify(data));
+    } catch (err) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ error: err.message || '구글 시트 불러오기 실패' }));
+    }
+  };
+
+  return {
+    name: 'sheet-calendar-api',
+    configureServer(server) {
+      server.middlewares.use(handler);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler);
+    },
+  };
+}
+
 /** 로컬 개발용 PDF 파싱 API (배포는 api/parse-pdf.py 서버리스 함수 사용) */
 function pdfParseApi() {
   const handler = (req, res, next) => {
@@ -144,6 +210,6 @@ function pdfParseApi() {
 }
 
 export default defineConfig({
-  plugins: [pdfParseApi(), calendarApiPlugin()],
+  plugins: [pdfParseApi(), calendarApiPlugin(), sheetCalendarApi()],
   server: { port: 5173, open: true },
 });

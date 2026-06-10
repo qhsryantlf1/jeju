@@ -2,15 +2,21 @@ import { getEventColor, extractGrade, isHolidayEvent } from './colorTag.js';
 import { expandDayEvents } from './eventExpand.js';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+const DEPT_COL_LABEL = '진로입학상담부';
+const BASE_MAX_FONT = 18;
+const REF_PANEL = { width: 900, height: 700 };
+const REF_COL = { day: 34, wd: 34, guide: 58 };
+const REF_FONT = { header: 13, date: 16 };
+const BASE_MIN_LINE_H = 26;
 
 const DEPT_NAMES = [
   '교무부', '학생부', '행정실', '학년부', '학년진학부',
   '과학영재부', '교육연구부', '진로입학상담부',
 ];
 
-const MIN_LINE_H = 26;
-const MIN_DAY_ROW_H = 26;
-const COMPACT_ROW_H = 26;
+const MIN_LINE_H = BASE_MIN_LINE_H;
+const MIN_DAY_ROW_H = BASE_MIN_LINE_H;
+const COMPACT_ROW_H = BASE_MIN_LINE_H;
 
 export function renderTvSchedule(container, dayData, onGradeHover, options = {}) {
   const year = options.year ?? 2026;
@@ -44,9 +50,76 @@ export function renderTvSchedule(container, dayData, onGradeHover, options = {})
   if (titleEl) titleEl.textContent = formatScheduleTitle(year, month);
 
   requestAnimationFrame(() => {
-    applyScheduleRowHeights(root, leftDays, rightDays);
-    requestAnimationFrame(() => applyUnifiedEventFontSize(root));
+    layoutScheduleContent(root, leftDays, rightDays);
   });
+}
+
+function getTvScale(root) {
+  const raw = root.style.getPropertyValue('--tv-scale');
+  const scale = Number.parseFloat(raw);
+  return Number.isFinite(scale) && scale > 0 ? scale : 1;
+}
+
+function syncScheduleScale(root) {
+  const panel = root.parentElement;
+  if (!panel) return BASE_MAX_FONT;
+
+  const scale = Math.min(
+    panel.clientWidth / REF_PANEL.width,
+    panel.clientHeight / REF_PANEL.height,
+  );
+  const s = Math.max(0.9, Math.min(2.4, scale));
+
+  root.style.setProperty('--tv-scale', s.toFixed(3));
+  root.style.setProperty('--tv-col-day', `${Math.round(REF_COL.day * s)}px`);
+  root.style.setProperty('--tv-col-wd', `${Math.round(REF_COL.wd * s)}px`);
+  root.style.setProperty('--tv-col-guide', `${Math.round(REF_COL.guide * s)}px`);
+  root.style.setProperty('--tv-header-font', `${Math.max(11, Math.round(REF_FONT.header * s))}px`);
+  root.style.setProperty('--tv-date-font', `${Math.max(12, Math.round(REF_FONT.date * s))}px`);
+
+  return Math.max(10, Math.round(BASE_MAX_FONT * s));
+}
+
+function layoutScheduleContent(root, leftDays, rightDays) {
+  const applyLayout = () => {
+    const maxFont = syncScheduleScale(root);
+    const scale = getTvScale(root);
+    applyScheduleRowHeights(root, leftDays, rightDays, scale);
+    syncDeptColumnWidth(root, maxFont);
+    requestAnimationFrame(() => {
+      const fontSize = applyColumnFonts(root, maxFont);
+      syncDeptColumnWidth(root, fontSize);
+      refreshDeptTextWidths(root);
+    });
+  };
+
+  syncStatusLayout();
+  applyLayout();
+  requestAnimationFrame(() => {
+    syncStatusLayout();
+    applyLayout();
+  });
+}
+
+export function syncStatusLayout() {
+  const panel = document.querySelector('.status-panel');
+  const wrap = document.querySelector('.status-image-wrap');
+  const frame = document.querySelector('.status-image-frame');
+  const title = document.getElementById('schedule-title');
+  const clock = document.getElementById('status-clock');
+  if (!panel || !wrap || !frame || !title) return;
+
+  const imageHeight = wrap.clientHeight;
+  if (imageHeight <= 0) return;
+
+  const imageWidth = Math.floor(imageHeight * (724 / 1024));
+  frame.style.height = `${imageHeight}px`;
+  frame.style.width = `${imageWidth}px`;
+
+  title.style.width = `${imageWidth}px`;
+  if (clock) clock.style.width = `${imageWidth}px`;
+
+  panel.style.width = `${imageWidth}px`;
 }
 
 function formatScheduleTitle(_calendarYear, month) {
@@ -85,18 +158,37 @@ function buildRowLines(dayInfo) {
   const events = dayInfo.events || [];
   const depts = (dayInfo.departments || []).map(extractDeptName);
   const guides = dayInfo.lifeGuides || [];
+  const eventColors = dayInfo.eventColors || [];
+  const deptColors = dayInfo.departmentColors || [];
+  const guideColors = dayInfo.lifeGuideColors || [];
 
   if (hasActivity(dayInfo)) {
     return events.map((event, idx) => ({
       event: event?.trim() ?? '',
       dept: depts[idx] ?? '',
       guide: guides[idx] ?? (guides.length === 1 ? guides[0] : ''),
+      eventColor: eventColors[idx] ?? eventColors[0] ?? '',
+      deptColor: deptColors[idx] ?? deptColors[0] ?? '',
+      guideColor: guideColors[idx] ?? guideColors[0] ?? '',
     }));
   }
 
   return guides
     .filter((guide) => guide?.trim())
-    .map((guide) => ({ event: '', dept: '', guide }));
+    .map((guide, idx) => ({
+      event: '',
+      dept: '',
+      guide,
+      eventColor: '',
+      deptColor: '',
+      guideColor: guideColors[idx] ?? guideColors[0] ?? '',
+    }));
+}
+
+function applyTextColor(el, color) {
+  if (color && color !== '#000000') {
+    el.style.color = color;
+  }
 }
 
 function hasActivity(dayInfo) {
@@ -109,7 +201,17 @@ function isCompactDay(dayInfo) {
 
 function isDepartureDay(dayInfo, lines) {
   if (dayInfo.weekday === '토') return false;
+  if (lines.some((line) => line.event && isHolidayEvent(line.event))) return false;
   return !lines.some((line) => line.guide?.trim());
+}
+
+function getMergedGuide(lines) {
+  const guides = lines.map((line) => line.guide?.trim() ?? '');
+  const nonEmpty = guides.filter(Boolean);
+  if (nonEmpty.length === 0) return null;
+  const unique = [...new Set(nonEmpty)];
+  if (unique.length === 1) return unique[0];
+  return null;
 }
 
 function buildDayRow(dayInfo, today, onGradeHover) {
@@ -130,10 +232,12 @@ function buildDayRow(dayInfo, today, onGradeHover) {
   const dateCell = document.createElement('div');
   dateCell.className = `tv-date${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}`;
   dateCell.textContent = dayInfo.day;
+  applyTextColor(dateCell, dayInfo.dayColor);
 
   const wdCell = document.createElement('div');
   wdCell.className = `tv-wd${isHoliday ? ' holiday' : ''}${isSaturday ? ' saturday' : ''}`;
   wdCell.textContent = dayInfo.weekday;
+  applyTextColor(wdCell, dayInfo.weekdayColor);
 
   const eventsCell = document.createElement('div');
   eventsCell.className = 'tv-events';
@@ -144,12 +248,14 @@ function buildDayRow(dayInfo, today, onGradeHover) {
     if (title) {
       const color = getEventColor(title);
       const grade = extractGrade(title);
-      ev.className = `tv-event${color !== 'default' ? ` color-${color}` : ''}`;
+      const useSheetColor = line.eventColor && line.eventColor !== '#000000';
+      ev.className = `tv-event${!useSheetColor && color !== 'default' ? ` color-${color}` : ''}`;
 
       const text = document.createElement('span');
       text.className = 'tv-event-text';
       text.textContent = title;
       text.title = title;
+      applyTextColor(text, line.eventColor);
       ev.appendChild(text);
 
       if (grade) {
@@ -172,28 +278,41 @@ function buildDayRow(dayInfo, today, onGradeHover) {
     if (dept) {
       el.textContent = dept;
       el.title = dept;
+      applyTextColor(el, line.deptColor);
     }
     deptCell.appendChild(el);
   });
 
   const guideCell = document.createElement('div');
   guideCell.className = 'tv-guide';
-  lines.forEach((line) => {
-    const guide = line.guide?.trim() ?? '';
+  const mergedGuide = getMergedGuide(lines);
+
+  if (mergedGuide) {
     const el = document.createElement('span');
-    el.className = 'tv-guide-line';
-    if (guide) {
-      el.textContent = guide;
-      el.title = guide;
-    }
+    el.className = 'tv-guide-merged';
+    el.textContent = mergedGuide;
+    el.title = mergedGuide;
+    applyTextColor(el, lines.find((line) => line.guide?.trim())?.guideColor);
     guideCell.appendChild(el);
-  });
+  } else {
+    lines.forEach((line) => {
+      const guide = line.guide?.trim() ?? '';
+      const el = document.createElement('span');
+      el.className = 'tv-guide-line';
+      if (guide) {
+        el.textContent = guide;
+        el.title = guide;
+        applyTextColor(el, line.guideColor);
+      }
+      guideCell.appendChild(el);
+    });
+  }
 
   row.append(dateCell, wdCell, eventsCell, deptCell, guideCell);
   return row;
 }
 
-function applyScheduleRowHeights(root, leftDays, rightDays) {
+function applyScheduleRowHeights(root, leftDays, rightDays, _scale = 1) {
   const bodies = [...root.querySelectorAll('.tv-col-body')];
   const bodyHeight = bodies[0]?.clientHeight ?? 0;
   if (bodyHeight <= 0) return;
@@ -203,61 +322,166 @@ function applyScheduleRowHeights(root, leftDays, rightDays) {
     { body: bodies[1], days: rightDays },
   ].forEach(({ body, days }) => {
     if (!body) return;
+    layoutColumnRows(body, days, bodyHeight);
+  });
+}
 
-    let compactCount = 0;
-    let activityUnits = 0;
-    for (const day of days) {
-      if (isCompactDay(day)) compactCount += 1;
-      else activityUnits += buildRowLines(day).length;
-    }
+function layoutColumnRows(body, days, bodyHeight) {
+  const rows = [...body.querySelectorAll('.tv-day-row')];
+  const specs = days.map((day, i) => {
+    const lines = buildRowLines(day);
+    const compact = isCompactDay(day);
+    return {
+      row: rows[i],
+      lines,
+      compact,
+      weight: compact ? 1 : Math.max(lines.length, 1),
+    };
+  });
 
-    const remaining = Math.max(
-      bodyHeight - compactCount * COMPACT_ROW_H,
-      activityUnits * MIN_LINE_H,
-    );
-    const lineH = activityUnits > 0 ? remaining / activityUnits : MIN_LINE_H;
+  const totalWeight = specs.reduce((sum, spec) => sum + spec.weight, 0);
+  if (totalWeight <= 0) return;
 
-    const rows = [...body.querySelectorAll('.tv-day-row')];
-    rows.forEach((row, i) => {
-      const day = days[i];
-      const lines = buildRowLines(day);
+  const unitH = bodyHeight / totalWeight;
 
-      if (isCompactDay(day)) {
-        row.style.height = `${COMPACT_ROW_H}px`;
-        row.style.flex = 'none';
+  specs.forEach(({ row, lines, compact }) => {
+    if (!row) return;
 
-        if (lines.length === 0) return;
+    const rowH = compact ? unitH : unitH * lines.length;
+    const lineCount = Math.max(lines.length, 1);
+    const perLine = rowH / lineCount;
 
-        const perLine = COMPACT_ROW_H / lines.length;
-        row.querySelectorAll('.tv-event, .tv-dept-line, .tv-guide-line').forEach((el) => {
-          el.style.height = `${perLine}px`;
-          el.style.minHeight = `${perLine}px`;
-          el.style.maxHeight = `${perLine}px`;
-          el.style.lineHeight = '1';
-        });
-        return;
-      }
+    row.style.height = `${rowH}px`;
+    row.style.flex = 'none';
 
-      const lc = lines.length;
-      const rowH = Math.max(lc * lineH, MIN_DAY_ROW_H);
-      const perLine = rowH / lc;
-      row.style.height = `${rowH}px`;
-      row.style.flex = 'none';
-
-      row.querySelectorAll('.tv-event, .tv-dept-line').forEach((el) => {
-        el.style.height = `${perLine}px`;
-        el.style.minHeight = `${perLine}px`;
-        el.style.maxHeight = `${perLine}px`;
-        el.style.lineHeight = '1';
-      });
-      row.querySelectorAll('.tv-guide-line').forEach((el) => {
-        el.style.height = `${perLine}px`;
-        el.style.minHeight = `${perLine}px`;
-        el.style.maxHeight = 'none';
-        el.style.lineHeight = '1.15';
-      });
+    row.querySelectorAll('.tv-event, .tv-dept-line').forEach((el) => {
+      el.style.height = `${perLine}px`;
+      el.style.minHeight = `${perLine}px`;
+      el.style.maxHeight = `${perLine}px`;
+      el.style.lineHeight = '1.15';
+    });
+    row.querySelectorAll('.tv-guide-line').forEach((el) => {
+      el.style.height = `${perLine}px`;
+      el.style.minHeight = `${perLine}px`;
+      el.style.maxHeight = `${perLine}px`;
+      el.style.lineHeight = '1.15';
+    });
+    row.querySelectorAll('.tv-guide-merged').forEach((el) => {
+      el.style.height = '100%';
+      el.style.minHeight = `${rowH}px`;
     });
   });
+}
+
+function applyCellTextStyle(textEl, fontSize, { nowrap = false } = {}) {
+  textEl.style.whiteSpace = nowrap ? 'nowrap' : 'normal';
+  textEl.style.wordBreak = nowrap ? 'normal' : 'keep-all';
+  textEl.style.overflowWrap = nowrap ? 'normal' : 'break-word';
+  textEl.style.overflow = 'hidden';
+  textEl.style.textOverflow = nowrap ? 'ellipsis' : 'clip';
+  textEl.style.fontSize = `${fontSize}px`;
+  textEl.style.fontWeight = '700';
+  textEl.style.lineHeight = '1.15';
+}
+
+function measureTextWidth(text, fontSizePx) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return text.length * fontSizePx * 0.9;
+  ctx.font = `700 ${fontSizePx}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`;
+  return ctx.measureText(text).width;
+}
+
+function syncDeptColumnWidth(root, fontSizePx) {
+  const width = Math.ceil(measureTextWidth(DEPT_COL_LABEL, fontSizePx)) + 8;
+  root.style.setProperty('--tv-col-dept', `${width}px`);
+}
+
+function refreshDeptTextWidths(root) {
+  root.querySelectorAll('.tv-dept-line').forEach((el) => {
+    el.style.maxWidth = `${Math.max(el.clientWidth - 4, 0)}px`;
+  });
+}
+
+function cellPadding(cellEl) {
+  return cellEl.classList.contains('tv-event') ? { w: 6, h: 4 } : { w: 4, h: 2 };
+}
+
+function maxFontSizeForWrappedCell(cellEl, textEl, maxCap = 18) {
+  const text = textEl.textContent?.trim() ?? '';
+  if (!text) return 9;
+
+  const pad = cellPadding(cellEl);
+  const maxW = cellEl.clientWidth - pad.w;
+  const maxH = cellEl.clientHeight - pad.h;
+  if (maxW <= 0 || maxH <= 0) return 9;
+
+  let lo = 8;
+  let hi = maxCap;
+  let best = lo;
+
+  while (lo <= hi) {
+    const mid = Math.floor((lo + hi) / 2);
+    applyCellTextStyle(textEl, mid);
+    textEl.style.maxWidth = `${maxW}px`;
+
+    const fits = textEl.scrollHeight <= maxH && textEl.scrollWidth <= maxW + 1;
+    if (fits) {
+      best = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+
+  applyCellTextStyle(textEl, best);
+  textEl.style.maxWidth = `${maxW}px`;
+  return best;
+}
+
+function computeBaselineSize(baselineItems, maxCap = 18) {
+  if (baselineItems.length === 0) return maxCap;
+  return baselineItems.reduce((minSize, item) => {
+    const cellMax = maxFontSizeForWrappedCell(item.cell, item.textEl, maxCap);
+    return Math.min(minSize, cellMax);
+  }, maxCap);
+}
+
+function applyUnifiedFont(baselineItems, allItems, maxCap = BASE_MAX_FONT) {
+  if (allItems.length === 0) return maxCap;
+
+  const targetSize = computeBaselineSize(baselineItems, maxCap);
+
+  allItems.forEach(({ textEl, cell }) => {
+    const pad = cellPadding(cell);
+    const nowrap = textEl.classList.contains('tv-dept-line');
+    applyCellTextStyle(textEl, targetSize, { nowrap });
+    textEl.style.maxWidth = `${Math.max(cell.clientWidth - pad.w, 0)}px`;
+  });
+
+  return targetSize;
+}
+
+export function applyColumnFonts(root, maxCap = BASE_MAX_FONT) {
+  const eventItems = [...root.querySelectorAll('.tv-event-text')]
+    .filter((textEl) => textEl.textContent?.trim())
+    .map((textEl) => ({
+      textEl,
+      cell: textEl.closest('.tv-event'),
+    }))
+    .filter((item) => item.cell);
+
+  const deptItems = [...root.querySelectorAll('.tv-dept-line')]
+    .filter((el) => el.textContent?.trim())
+    .map((el) => ({ textEl: el, cell: el }));
+
+  const guideItems = [
+    ...[...root.querySelectorAll('.tv-guide-line')].filter((el) => el.textContent?.trim()),
+    ...[...root.querySelectorAll('.tv-guide-merged')].filter((el) => el.textContent?.trim()),
+  ].map((el) => ({ textEl: el, cell: el }));
+
+  const allItems = [...eventItems, ...deptItems, ...guideItems];
+  return applyUnifiedFont(eventItems, allItems, maxCap);
 }
 
 function applyRowHeights(body, days) {
@@ -292,72 +516,19 @@ function applyRowHeights(body, days) {
       el.style.height = `${perLine}px`;
       el.style.minHeight = `${perLine}px`;
       el.style.maxHeight = `${perLine}px`;
-      el.style.lineHeight = '1';
+      el.style.lineHeight = '1.15';
     });
     row.querySelectorAll('.tv-guide-line').forEach((el) => {
       el.style.height = `${perLine}px`;
       el.style.minHeight = `${perLine}px`;
-      el.style.maxHeight = 'none';
+      el.style.maxHeight = `${perLine}px`;
       el.style.lineHeight = '1.15';
     });
+    row.querySelectorAll('.tv-guide-merged').forEach((el) => {
+      el.style.height = '100%';
+      el.style.minHeight = `${rowH}px`;
+    });
   });
-}
-
-function applyUnifiedEventFontSize(root) {
-  const items = [...root.querySelectorAll('.tv-event-text')]
-    .filter((textEl) => textEl.textContent?.trim())
-    .map((textEl) => ({
-      textEl,
-      cell: textEl.closest('.tv-event'),
-      text: textEl.textContent,
-    }))
-    .filter((item) => item.cell);
-
-  if (items.length === 0) return;
-
-  const fontFamily = getComputedStyle(items[0].textEl).fontFamily || 'sans-serif';
-  const unifiedSize = items.reduce((minSize, item) => {
-    const cellMax = maxFontSizeForCell(item.cell, item.text, fontFamily);
-    return Math.min(minSize, cellMax);
-  }, 22);
-
-  items.forEach(({ textEl }) => {
-    textEl.style.whiteSpace = 'nowrap';
-    textEl.style.overflow = 'hidden';
-    textEl.style.textOverflow = 'clip';
-    textEl.style.fontSize = `${unifiedSize}px`;
-    textEl.style.lineHeight = `${unifiedSize}px`;
-  });
-}
-
-function maxFontSizeForCell(cellEl, text, fontFamily) {
-  const maxW = cellEl.clientWidth - 6;
-  const maxH = cellEl.clientHeight - 2;
-  if (maxW <= 0 || maxH <= 0) return 9;
-
-  let lo = 9;
-  let hi = Math.floor(Math.min(maxH * 0.92, 22));
-  let best = lo;
-
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    const textW = measureTextWidth(text, mid, fontFamily);
-    if (textW <= maxW && mid <= maxH) {
-      best = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
-  }
-
-  return best;
-}
-
-function measureTextWidth(text, fontSize, fontFamily) {
-  const canvas = measureTextWidth._canvas ??= document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  ctx.font = `700 ${fontSize}px ${fontFamily}`;
-  return ctx.measureText(text).width;
 }
 
 function extractDeptName(raw) {
