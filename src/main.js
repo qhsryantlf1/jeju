@@ -1,8 +1,10 @@
 import { loadCalendarData } from './pdfParser.js';
 import { fetchSheetCalendar } from './sheetCalendar.js';
+import { fetchSheetStatus } from './sheetStatus.js';
 import { saveUploadedCalendar, loadUploadedCalendar } from './calendarStorage.js';
 import { fetchSharedCalendar } from './calendarServer.js';
-import { renderTvSchedule, getScheduleOptions, syncStatusLayout } from './tvSchedule.js';
+import { renderTvSchedule, getScheduleOptions, syncStatusLayout, reapplyScheduleFonts } from './tvSchedule.js';
+import { renderStatusPanel, setStatusGradeHighlight, refitStatusTables } from './statusPanel.js';
 
 const WEEKDAY_LABELS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
@@ -27,9 +29,7 @@ const modalText = document.getElementById('modal-text');
 const modalClose = document.getElementById('modal-close');
 
 function setGradeHighlight(grade) {
-  document.querySelectorAll('.grade-highlight').forEach((el) => {
-    el.classList.toggle('active', grade !== null && el.dataset.grade === String(grade));
-  });
+  setStatusGradeHighlight(grade);
 }
 
 function showViewerError(message) {
@@ -82,12 +82,26 @@ async function loadSheetCalendar() {
   return true;
 }
 
+async function loadSheetStatus() {
+  const status = await fetchSheetStatus();
+  await renderStatusPanel(status);
+  syncStatusLayout();
+  refitStatusTables();
+  reapplyScheduleFonts();
+  return true;
+}
+
 async function init() {
   try {
     pdfViewerEl.innerHTML = '<div class="viewer-loading">일정 불러오는 중...</div>';
 
+    const statusPromise = loadSheetStatus().catch((err) => {
+      console.warn('학생/학교 정보 로드 실패:', err);
+    });
+
     try {
       await loadSheetCalendar();
+      await statusPromise;
       return;
     } catch (err) {
       console.warn('구글 시트 로드 실패:', err);
@@ -97,6 +111,7 @@ async function init() {
       const shared = await fetchSharedCalendar();
       if (shared?.data?.length) {
         applySharedCalendar(shared);
+        await statusPromise;
         return;
       }
     } catch (err) {
@@ -110,12 +125,14 @@ async function init() {
       sharedSavedAt = stored.savedAt ?? 0;
       useCachedLayout = false;
       renderCachedSchedule();
+      await statusPromise;
       return;
     }
 
     const res = await fetch('/assets/calendar.pdf');
     if (!res.ok) throw new Error(`PDF 파일을 찾을 수 없습니다 (${res.status})`);
     await renderBoard(await res.arrayBuffer());
+    await statusPromise;
   } catch (err) {
     console.error('초기화 실패:', err);
     showViewerError(err.message || '초기화에 실패했습니다.');
@@ -128,13 +145,9 @@ window.addEventListener('resize', () => {
   resizeTimer = setTimeout(() => {
     if (cachedCalendarData) renderCachedSchedule();
     syncStatusLayout();
+    refitStatusTables();
+    reapplyScheduleFonts();
   }, 200);
-});
-
-const statusImage = document.querySelector('.status-image');
-statusImage?.addEventListener('load', () => {
-  syncStatusLayout();
-  if (cachedCalendarData) renderCachedSchedule();
 });
 
 function showToast(msg) {
@@ -146,28 +159,6 @@ function showToast(msg) {
 function showModal(msg) {
   modalText.innerHTML = msg;
   modal.classList.remove('hidden');
-}
-
-async function copyText(text) {
-  await navigator.clipboard.writeText(text);
-}
-
-function setupHotspots() {
-  document.querySelectorAll('.hotspot').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const action = btn.dataset.action;
-      if (action === 'xroshot') {
-        await copyText('ID: jejusms\nPW: 과학고2014?');
-        showToast('xroshot 계정 정보가 복사되었습니다');
-        window.open('https://www.xroshot.com', '_blank');
-      } else if (action === 'wifi') {
-        await copyText('jejushs191876');
-        showToast('와이파이 비밀번호 복사 완료📋');
-      } else if (action === 'happynet') {
-        showModal('<strong>해피넷</strong><br><span style="font-size:2rem;color:#e74c3c">📞 748-2257</span>');
-      }
-    });
-  });
 }
 
 function isFullscreenActive() {
@@ -210,6 +201,7 @@ document.addEventListener('fullscreenchange', () => {
   if (cachedCalendarData) {
     requestAnimationFrame(() => {
       renderCachedSchedule();
+      reapplyScheduleFonts();
     });
   }
 });
@@ -218,6 +210,7 @@ document.addEventListener('webkitfullscreenchange', () => {
   if (cachedCalendarData) {
     requestAnimationFrame(() => {
       renderCachedSchedule();
+      reapplyScheduleFonts();
     });
   }
 });
@@ -270,7 +263,14 @@ setInterval(async () => {
   }
 }, 60_000);
 
-setupHotspots();
+setInterval(async () => {
+  try {
+    await loadSheetStatus();
+  } catch {
+    /* 학생/학교 정보 동기화 실패는 무시 */
+  }
+}, 60_000);
+
 updateStatusClock();
 setInterval(updateStatusClock, 1000);
 scheduleTodayRefresh();

@@ -1,10 +1,11 @@
 import { getEventColor, extractGrade, isHolidayEvent } from './colorTag.js';
 import { expandDayEvents } from './eventExpand.js';
+import { getSchoolInfoFontSize } from './statusPanel.js';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const DEPT_COL_LABEL = '진로입학상담부';
-const BASE_MAX_FONT = 18;
-const REF_PANEL = { width: 900, height: 700 };
+const REF_PANEL = { width: 750, height: 700 };
+const STATUS_WIDTH_RATIO = 0.50;
 const REF_COL = { day: 34, wd: 34, guide: 58 };
 const REF_FONT = { header: 13, date: 16 };
 const BASE_MIN_LINE_H = 26;
@@ -62,13 +63,13 @@ function getTvScale(root) {
 
 function syncScheduleScale(root) {
   const panel = root.parentElement;
-  if (!panel) return BASE_MAX_FONT;
+  if (!panel) return;
 
   const scale = Math.min(
     panel.clientWidth / REF_PANEL.width,
     panel.clientHeight / REF_PANEL.height,
   );
-  const s = Math.max(0.9, Math.min(2.4, scale));
+  const s = Math.max(0.95, Math.min(2.7, scale));
 
   root.style.setProperty('--tv-scale', s.toFixed(3));
   root.style.setProperty('--tv-col-day', `${Math.round(REF_COL.day * s)}px`);
@@ -76,50 +77,45 @@ function syncScheduleScale(root) {
   root.style.setProperty('--tv-col-guide', `${Math.round(REF_COL.guide * s)}px`);
   root.style.setProperty('--tv-header-font', `${Math.max(11, Math.round(REF_FONT.header * s))}px`);
   root.style.setProperty('--tv-date-font', `${Math.max(12, Math.round(REF_FONT.date * s))}px`);
-
-  return Math.max(10, Math.round(BASE_MAX_FONT * s));
 }
 
 function layoutScheduleContent(root, leftDays, rightDays) {
-  const applyLayout = () => {
-    const maxFont = syncScheduleScale(root);
-    const scale = getTvScale(root);
-    applyScheduleRowHeights(root, leftDays, rightDays, scale);
-    syncDeptColumnWidth(root, maxFont);
-    requestAnimationFrame(() => {
-      const fontSize = applyColumnFonts(root, maxFont);
-      syncDeptColumnWidth(root, fontSize);
-      refreshDeptTextWidths(root);
-    });
+  const run = () => {
+    syncScheduleScale(root);
+    applyScheduleRowHeights(root, leftDays, rightDays, getTvScale(root));
+    const fontSize = applyColumnFonts(root);
+    syncDeptColumnWidth(root, fontSize);
   };
 
   syncStatusLayout();
-  applyLayout();
-  requestAnimationFrame(() => {
-    syncStatusLayout();
-    applyLayout();
-  });
+  requestAnimationFrame(run);
+}
+
+export function reapplyScheduleFonts() {
+  const root = document.querySelector('.tv-schedule');
+  if (!root) return;
+  const fontSize = applyColumnFonts(root);
+  syncDeptColumnWidth(root, fontSize);
 }
 
 export function syncStatusLayout() {
   const panel = document.querySelector('.status-panel');
-  const wrap = document.querySelector('.status-image-wrap');
-  const frame = document.querySelector('.status-image-frame');
+  const wrap = document.querySelector('.status-sheets-wrap');
   const title = document.getElementById('schedule-title');
   const clock = document.getElementById('status-clock');
-  if (!panel || !wrap || !frame || !title) return;
+  if (!panel || !wrap || !title) return;
 
-  const imageHeight = wrap.clientHeight;
-  if (imageHeight <= 0) return;
+  const contentHeight = wrap.clientHeight;
+  if (contentHeight <= 0) return;
 
-  const imageWidth = Math.floor(imageHeight * (724 / 1024));
-  frame.style.height = `${imageHeight}px`;
-  frame.style.width = `${imageWidth}px`;
+  const contentWidth = Math.floor(contentHeight * STATUS_WIDTH_RATIO);
+  wrap.style.height = `${contentHeight}px`;
+  wrap.style.width = `${contentWidth}px`;
 
-  title.style.width = `${imageWidth}px`;
-  if (clock) clock.style.width = `${imageWidth}px`;
+  title.style.width = `${contentWidth}px`;
+  if (clock) clock.style.width = `${contentWidth}px`;
 
-  panel.style.width = `${imageWidth}px`;
+  panel.style.width = `${contentWidth}px`;
 }
 
 function formatScheduleTitle(_calendarYear, month) {
@@ -382,6 +378,26 @@ function applyCellTextStyle(textEl, fontSize, { nowrap = false } = {}) {
   textEl.style.fontSize = `${fontSize}px`;
   textEl.style.fontWeight = '700';
   textEl.style.lineHeight = '1.15';
+  textEl.style.letterSpacing = '0px';
+}
+
+function cellFits(textEl, cell) {
+  const pad = cellPadding(cell);
+  const maxW = cell.clientWidth - pad.w;
+  const maxH = cell.clientHeight - pad.h;
+  return textEl.scrollHeight <= maxH + 2 && textEl.scrollWidth <= maxW + 2;
+}
+
+function tightenLetterSpacing(textEl, cell) {
+  const pad = cellPadding(cell);
+  textEl.style.maxWidth = `${Math.max(cell.clientWidth - pad.w, 0)}px`;
+  textEl.style.letterSpacing = '0px';
+  if (cellFits(textEl, cell)) return;
+
+  for (let step = 1; step <= 12; step += 1) {
+    textEl.style.letterSpacing = `${-(step * 0.008)}em`;
+    if (cellFits(textEl, cell)) return;
+  }
 }
 
 function measureTextWidth(text, fontSizePx) {
@@ -397,72 +413,36 @@ function syncDeptColumnWidth(root, fontSizePx) {
   root.style.setProperty('--tv-col-dept', `${width}px`);
 }
 
-function refreshDeptTextWidths(root) {
-  root.querySelectorAll('.tv-dept-line').forEach((el) => {
-    el.style.maxWidth = `${Math.max(el.clientWidth - 4, 0)}px`;
-  });
-}
-
 function cellPadding(cellEl) {
   return cellEl.classList.contains('tv-event') ? { w: 6, h: 4 } : { w: 4, h: 2 };
 }
 
-function maxFontSizeForWrappedCell(cellEl, textEl, maxCap = 18) {
-  const text = textEl.textContent?.trim() ?? '';
-  if (!text) return 9;
+function applyCellFontAtSchoolSize(textEl, cell, targetSize, { allowWrap = false } = {}) {
+  const isDept = textEl.classList.contains('tv-dept-line');
+  const isGuideLine = textEl.classList.contains('tv-guide-line');
+  const isMerged = textEl.classList.contains('tv-guide-merged');
+  const nowrap = !allowWrap && (isDept || isGuideLine);
+  const measureCell = (isDept || isGuideLine || isMerged) ? textEl : cell;
+  const isEventText = textEl.classList.contains('tv-event-text');
 
-  const pad = cellPadding(cellEl);
-  const maxW = cellEl.clientWidth - pad.w;
-  const maxH = cellEl.clientHeight - pad.h;
-  if (maxW <= 0 || maxH <= 0) return 9;
+  applyCellTextStyle(textEl, targetSize, { nowrap });
+  textEl.style.letterSpacing = '0px';
 
-  let lo = 8;
-  let hi = maxCap;
-  let best = lo;
-
-  while (lo <= hi) {
-    const mid = Math.floor((lo + hi) / 2);
-    applyCellTextStyle(textEl, mid);
-    textEl.style.maxWidth = `${maxW}px`;
-
-    const fits = textEl.scrollHeight <= maxH && textEl.scrollWidth <= maxW + 1;
-    if (fits) {
-      best = mid;
-      lo = mid + 1;
-    } else {
-      hi = mid - 1;
-    }
+  if (isEventText) {
+    const pad = cellPadding(cell);
+    textEl.style.maxWidth = `${Math.max(cell.clientWidth - pad.w, 0)}px`;
+  } else {
+    textEl.style.maxWidth = '';
   }
 
-  applyCellTextStyle(textEl, best);
-  textEl.style.maxWidth = `${maxW}px`;
-  return best;
+  if (!cellFits(textEl, measureCell)) {
+    tightenLetterSpacing(textEl, measureCell);
+  }
 }
 
-function computeBaselineSize(baselineItems, maxCap = 18) {
-  if (baselineItems.length === 0) return maxCap;
-  return baselineItems.reduce((minSize, item) => {
-    const cellMax = maxFontSizeForWrappedCell(item.cell, item.textEl, maxCap);
-    return Math.min(minSize, cellMax);
-  }, maxCap);
-}
+export function applyColumnFonts(root) {
+  const targetSize = getSchoolInfoFontSize();
 
-function applyUnifiedFont(baselineItems, allItems, maxCap = BASE_MAX_FONT) {
-  if (allItems.length === 0) return maxCap;
-
-  const targetSize = computeBaselineSize(baselineItems, maxCap);
-
-  allItems.forEach(({ textEl, cell }) => {
-    const pad = cellPadding(cell);
-    const nowrap = textEl.classList.contains('tv-dept-line');
-    applyCellTextStyle(textEl, targetSize, { nowrap });
-    textEl.style.maxWidth = `${Math.max(cell.clientWidth - pad.w, 0)}px`;
-  });
-
-  return targetSize;
-}
-
-export function applyColumnFonts(root, maxCap = BASE_MAX_FONT) {
   const eventItems = [...root.querySelectorAll('.tv-event-text')]
     .filter((textEl) => textEl.textContent?.trim())
     .map((textEl) => ({
@@ -480,8 +460,20 @@ export function applyColumnFonts(root, maxCap = BASE_MAX_FONT) {
     ...[...root.querySelectorAll('.tv-guide-merged')].filter((el) => el.textContent?.trim()),
   ].map((el) => ({ textEl: el, cell: el }));
 
-  const allItems = [...eventItems, ...deptItems, ...guideItems];
-  return applyUnifiedFont(eventItems, allItems, maxCap);
+  eventItems.forEach((item) => {
+    applyCellFontAtSchoolSize(item.textEl, item.cell, targetSize);
+  });
+
+  deptItems.forEach((item) => {
+    applyCellFontAtSchoolSize(item.textEl, item.cell, targetSize);
+  });
+
+  guideItems.forEach((item) => {
+    const isMerged = item.textEl.classList.contains('tv-guide-merged');
+    applyCellFontAtSchoolSize(item.textEl, item.cell, targetSize, { allowWrap: isMerged });
+  });
+
+  return targetSize;
 }
 
 function applyRowHeights(body, days) {

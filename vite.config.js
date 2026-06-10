@@ -109,10 +109,11 @@ function calendarApiPlugin() {
 }
 
 const SHEET_SCRIPT = path.join(__dirname, 'scripts', 'fetch-sheet.py');
+const STATUS_SCRIPT = path.join(__dirname, 'scripts', 'fetch-status.py');
 
-function runSheetFetch() {
+function runPythonScript(scriptPath) {
   return new Promise((resolve, reject) => {
-    const proc = spawn('python', [SHEET_SCRIPT], {
+    const proc = spawn('python', [scriptPath], {
       cwd: __dirname,
       windowsHide: true,
       env: {
@@ -143,6 +144,14 @@ function runSheetFetch() {
   });
 }
 
+function runSheetFetch() {
+  return runPythonScript(SHEET_SCRIPT);
+}
+
+function runStatusFetch() {
+  return runPythonScript(STATUS_SCRIPT);
+}
+
 /** 로컬 개발용 구글 시트 API */
 function sheetCalendarApi() {
   const handler = async (req, res, next) => {
@@ -165,6 +174,37 @@ function sheetCalendarApi() {
 
   return {
     name: 'sheet-calendar-api',
+    configureServer(server) {
+      server.middlewares.use(handler);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler);
+    },
+  };
+}
+
+/** 로컬 개발용 학생/학교 정보 API */
+function sheetStatusApi() {
+  const handler = async (req, res, next) => {
+    if (req.url?.split('?')[0] !== '/api/sheet-status' || req.method !== 'GET') {
+      next();
+      return;
+    }
+
+    try {
+      const data = await runStatusFetch();
+      res.statusCode = 200;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify(data));
+    } catch (err) {
+      res.statusCode = 500;
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.end(JSON.stringify({ error: err.message || '학생/학교 정보 불러오기 실패' }));
+    }
+  };
+
+  return {
+    name: 'sheet-status-api',
     configureServer(server) {
       server.middlewares.use(handler);
     },
@@ -210,6 +250,6 @@ function pdfParseApi() {
 }
 
 export default defineConfig({
-  plugins: [pdfParseApi(), calendarApiPlugin(), sheetCalendarApi()],
+  plugins: [pdfParseApi(), calendarApiPlugin(), sheetCalendarApi(), sheetStatusApi()],
   server: { port: 5173, open: true },
 });
