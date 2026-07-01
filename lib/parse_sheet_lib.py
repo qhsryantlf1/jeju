@@ -57,29 +57,48 @@ def font_color_hex(font) -> str:
     return DEFAULT_COLOR
 
 
+_LINE_BREAK_RE = re.compile(r"[\r\n\x0b\u2028\u2029]+")
+
+
+def split_activity_text(text: str) -> list[str]:
+    text = str(text or "").replace("_x000D_", "\n").strip()
+    if not text:
+        return []
+
+    by_slash = [p.strip() for p in re.split(r"\s+/\s+", text) if p.strip()]
+    if len(by_slash) > 1:
+        return by_slash
+
+    by_newline = [p.strip() for p in _LINE_BREAK_RE.split(text) if p.strip()]
+    if len(by_newline) > 1:
+        return by_newline
+
+    by_dot = [p.strip() for p in re.split(r"\s*[·•]\s*", text) if p.strip()]
+    if len(by_dot) > 1:
+        return by_dot
+
+    return [text]
+
+
 def parse_styled_lines(cell) -> list[dict]:
     lines = []
     default_color = font_color_hex(cell.font)
 
     if isinstance(cell.value, CellRichText):
         for block in cell.value:
-            text = str(block)
+            text = str(block).replace("_x000D_", "\n")
             color = font_color_hex(block.font) or default_color
-            for part in text.split("\n"):
-                part = part.strip()
-                if part:
-                    lines.append({"text": part, "color": color})
+            for part in split_activity_text(text):
+                lines.append({"text": part, "color": color})
         return lines
 
     if cell.value in (None, ""):
         return lines
 
-    text = str(cell.value).strip()
+    text = str(cell.value).replace("_x000D_", "\n").strip()
     color = default_color
-    for part in text.split("\n"):
-        part = part.strip()
-        if part:
-            lines.append({"text": part, "color": color})
+    for part in split_activity_text(text):
+        lines.append({"text": part, "color": color})
     return lines
 
 
@@ -111,10 +130,11 @@ def expand_slash_styled(event_lines, dept_lines, guide_lines):
         dept = dept_lines[idx] if idx < len(dept_lines) else (dept_lines[0] if len(dept_lines) == 1 else {"text": "", "color": DEFAULT_COLOR})
         guide = guide_lines[idx] if idx < len(guide_lines) else (guide_lines[0] if len(guide_lines) == 1 else {"text": "", "color": DEFAULT_COLOR})
 
-        parts = [p.strip() for p in re.split(r"\s+/\s+", event["text"]) if p.strip()]
-        split_events = parts if len(parts) > 1 else [event["text"]]
+        parts = split_activity_text(event["text"])
+        if not parts:
+            continue
 
-        for part in split_events:
+        for part in parts:
             out_events.append(part)
             out_event_colors.append(event["color"])
             out_depts.append(dept["text"])
@@ -161,41 +181,118 @@ def normalize_day(value) -> int | None:
     return None
 
 
-def parse_sheet_workbook(ws) -> tuple[list, dict]:
-    meta = parse_title_meta(ws)
-    days = []
-
-    for row in range(1, ws.max_row + 1):
-        day = normalize_day(ws.cell(row, 1).value)
-        weekday = str(ws.cell(row, 2).value or "").strip()
-        if day is None or weekday not in WEEKDAYS:
+def detect_sheet_columns(ws) -> dict:
+    for row in range(1, 8):
+        labels = {
+            col: str(ws.cell(row, col).value or "").strip()
+            for col in range(1, 7)
+            if str(ws.cell(row, col).value or "").strip()
+        }
+        if labels.get(1) != "일" or labels.get(2) != "요일":
             continue
 
-        event_lines = parse_styled_lines(ws.cell(row, 3))
-        dept_lines = parse_styled_lines(ws.cell(row, 4))
-        guide_lines = parse_styled_lines(ws.cell(row, 5))
+        event_col = next((col for col, label in labels.items() if col >= 3 and ("활동" in label or label == "주요활동")), 3)
+        dept_col = next((col for col, label in labels.items() if "담당" in label), None)
+        guide_col = next((col for col, label in labels.items() if "생활" in label), None)
 
-        (
-            events,
-            event_colors,
-            departments,
-            department_colors,
-            life_guides,
-            life_guide_colors,
-        ) = expand_slash_styled(event_lines, dept_lines, guide_lines)
+        if guide_col is None:
+            guide_col = 5 if dept_col == 4 else 4
 
-        days.append({
-            "day": day,
-            "weekday": weekday,
-            "events": events,
-            "eventColors": event_colors,
-            "departments": departments,
-            "departmentColors": department_colors,
-            "lifeGuides": life_guides,
-            "lifeGuideColors": life_guide_colors,
-            "dayColor": font_color_hex(ws.cell(row, 1).font),
-            "weekdayColor": font_color_hex(ws.cell(row, 2).font),
-        })
+        return {
+            "event_col": event_col,
+            "dept_col": dept_col,
+            "guide_col": guide_col,
+            "header_row": row,
+        }
+
+    return {
+        "event_col": 3,
+        "dept_col": 4,
+        "guide_col": 5,
+        "header_row": 3,
+    }
+
+
+def _styled_lines_from_cell(ws, row: int, col: int | None) -> list[dict]:
+    if col is None:
+        return []
+    return parse_styled_lines(ws.cell(row, col))
+
+
+def _row_has_schedule_content(ws, row: int, cols: dict) -> bool:
+    if any(line["text"] for line in _styled_lines_from_cell(ws, row, cols["event_col"])):
+        return True
+    if any(line["text"] for line in _styled_lines_from_cell(ws, row, cols["dept_col"])):
+        return True
+    if any(line["text"] for line in _styled_lines_from_cell(ws, row, cols["guide_col"])):
+        return True
+    return False
+
+
+def _finalize_day_entry(ws, row: int, day: int, weekday: str,
+                        event_lines: list[dict], dept_lines: list[dict], guide_lines: list[dict]) -> dict:
+    (
+        events,
+        event_colors,
+        departments,
+        department_colors,
+        life_guides,
+        life_guide_colors,
+    ) = expand_slash_styled(event_lines, dept_lines, guide_lines)
+
+    return {
+        "day": day,
+        "weekday": weekday,
+        "events": events,
+        "eventColors": event_colors,
+        "departments": departments,
+        "departmentColors": department_colors,
+        "lifeGuides": life_guides,
+        "lifeGuideColors": life_guide_colors,
+        "dayColor": font_color_hex(ws.cell(row, 1).font),
+        "weekdayColor": font_color_hex(ws.cell(row, 2).font),
+    }
+
+
+def parse_sheet_workbook(ws) -> tuple[list, dict]:
+    meta = parse_title_meta(ws)
+    cols = detect_sheet_columns(ws)
+    days = []
+
+    current = None
+
+    for row in range(cols["header_row"] + 1, ws.max_row + 1):
+        day = normalize_day(ws.cell(row, 1).value)
+        weekday = str(ws.cell(row, 2).value or "").strip()
+        event_lines = _styled_lines_from_cell(ws, row, cols["event_col"])
+        dept_lines = _styled_lines_from_cell(ws, row, cols["dept_col"])
+        guide_lines = _styled_lines_from_cell(ws, row, cols["guide_col"])
+
+        if day is not None and weekday in WEEKDAYS:
+            if current is not None:
+                days.append(_finalize_day_entry(ws, **current))
+            current = {
+                "row": row,
+                "day": day,
+                "weekday": weekday,
+                "event_lines": event_lines,
+                "dept_lines": dept_lines,
+                "guide_lines": guide_lines,
+            }
+            continue
+
+        if current is not None and day is None and _row_has_schedule_content(ws, row, cols):
+            current["event_lines"].extend(event_lines)
+            current["dept_lines"].extend(dept_lines)
+            current["guide_lines"].extend(guide_lines)
+            continue
+
+        if current is not None:
+            days.append(_finalize_day_entry(ws, **current))
+            current = None
+
+    if current is not None:
+        days.append(_finalize_day_entry(ws, **current))
 
     days.sort(key=lambda item: item["day"])
     return days, meta

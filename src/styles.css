@@ -24,7 +24,6 @@
   --grid-line-strong: #1a1a1a;
   --tv-col-day: 34px;
   --tv-col-wd: 34px;
-  --tv-col-dept: 120px;
   --tv-col-guide: 58px;
 }
 
@@ -161,7 +160,7 @@ html, body {
 
 .tv-col-headers {
   display: grid;
-  grid-template-columns: var(--tv-col-day) var(--tv-col-wd) minmax(0, 1fr) var(--tv-col-dept) var(--tv-col-guide);
+  grid-template-columns: var(--tv-col-day) var(--tv-col-wd) minmax(0, 1fr) var(--tv-col-guide);
   align-items: center;
   justify-items: center;
   font-size: var(--tv-header-font);
@@ -200,7 +199,7 @@ html, body {
 
 .tv-day-row {
   display: grid;
-  grid-template-columns: var(--tv-col-day) var(--tv-col-wd) minmax(0, 1fr) var(--tv-col-dept) var(--tv-col-guide);
+  grid-template-columns: var(--tv-col-day) var(--tv-col-wd) minmax(0, 1fr) var(--tv-col-guide);
   align-items: stretch;
   border-bottom: 2px solid var(--grid-line);
   flex: none;
@@ -334,42 +333,6 @@ html, body {
   display: block;
   font-weight: 700;
   line-height: 1.15;
-}
-
-.tv-dept {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 0;
-  padding: 0;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-dark);
-  line-height: 1.15;
-  text-align: center;
-  border-right: 1px solid var(--grid-line);
-}
-
-.tv-dept-line {
-  flex: none;
-  width: 100%;
-  white-space: nowrap;
-  word-break: keep-all;
-  overflow-wrap: normal;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1px 3px;
-  border-bottom: 1px solid var(--grid-line);
-  text-align: center;
-  line-height: 1.15;
-  font-weight: 700;
-}
-
-.tv-dept-line:last-child {
-  border-bottom: none;
 }
 
 .tv-guide {

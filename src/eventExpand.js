@@ -4,6 +4,26 @@ function pickColor(colors, idx, fallback = DEFAULT_COLOR) {
   return colors?.[idx] ?? colors?.[0] ?? fallback;
 }
 
+/** 주요활동 문자열을 줄바꿈·슬래시·중점 구분으로 분리 */
+function splitActivityText(text) {
+  const normalized = String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/_x000D_/gi, '\n')
+    .trim();
+  if (!normalized) return [];
+
+  const bySlash = normalized.split(/\s+\/\s+/).map((s) => s.trim()).filter(Boolean);
+  if (bySlash.length > 1) return bySlash;
+
+  const byNewline = normalized.split(/\n+/).map((s) => s.trim()).filter(Boolean);
+  if (byNewline.length > 1) return byNewline;
+
+  const byDot = normalized.split(/\s*[·•]\s*/).map((s) => s.trim()).filter(Boolean);
+  if (byDot.length > 1) return byDot;
+
+  return [normalized];
+}
+
 /** 주요활동 문자열의 " / " 구분을 별도 일정 줄로 분리 */
 export function expandDayEvents(day) {
   const events = [];
@@ -48,8 +68,7 @@ export function expandDayEvents(day) {
     const eventColor = pickColor(rawEventColors, idx);
     const deptColor = pickColor(rawDeptColors, idx);
     const guideColor = pickColor(rawGuideColors, idx);
-    const parts = event.split(/\s+\/\s+/).map((s) => s.trim()).filter(Boolean);
-    const lines = parts.length > 1 ? parts : [event.trim()];
+    const lines = splitActivityText(event);
 
     lines.forEach((line) => {
       events.push(line);
