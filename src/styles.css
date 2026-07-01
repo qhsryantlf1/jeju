@@ -10,15 +10,13 @@
   --bg-page: #f5f0e6;
   --bg-accent: #2b4c3f;
   --calendar-bg: #f5f0e6;
-  --today-neon: #00f5ff;
+  --today-border: #d4a800;
+  --today-neon: #fff200;
   --color-blue: #4a90d9;
   --color-saturday: #1565c0;
   --color-pink: #e91e8c;
   --color-green: #5cb85c;
   --color-yellow: #ffe066;
-  --color-departure: #e3f2fd;
-  --color-departure-strong: #d4ebf9;
-  --color-departure-tag: #b3d9f2;
   --color-purple: #9b59b6;
   --color-red: #e74c3c;
   --text-dark: #1a1a1a;
@@ -104,7 +102,6 @@ html, body {
 
 .legend-item.color-blue { background: var(--color-blue); }
 .legend-item.color-green { background: var(--color-green); }
-.legend-item.color-departure { background: var(--color-departure-tag); color: #2a5a7a; }
 .legend-item.color-yellow { background: var(--color-yellow); color: #6b5a1e; }
 .legend-item.color-purple { background: var(--color-purple); }
 .legend-item.color-red { background: var(--color-red); }
@@ -215,56 +212,46 @@ html, body {
   background: #f4f4f4;
 }
 
-.tv-day-row.departure-day {
-  background: var(--color-departure);
-}
-
-.tv-day-row.departure-day.compact-day {
-  background: var(--color-departure-strong);
-}
-
-.tv-day-row.departure-day.today {
-  background: #e8fbff;
-}
-
 .tv-day-row.has-events {
   min-height: 28px;
 }
 
 .tv-day-row.today {
-  background: #c8f4ff;
-  box-shadow:
-    inset 0 0 0 4px #00d4ff,
-    inset 0 0 0 7px rgba(0, 212, 255, 0.35),
-    0 0 14px rgba(0, 212, 255, 0.5);
   position: relative;
   z-index: 2;
 }
 
-.tv-day-row.today .tv-date,
-.tv-day-row.today .tv-wd {
-  color: #006d8f;
-  font-weight: 800;
+.tv-day-row.today::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 3px solid var(--today-border);
+  pointer-events: none;
+  z-index: 5;
+  box-sizing: border-box;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 248, 60, 0.7),
+    inset 0 0 12px rgba(255, 230, 0, 0.35);
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .tv-day-row.today {
-    animation: today-glow 2.4s ease-in-out infinite;
+  .tv-day-row.today::after {
+    animation: today-border-glow 2s ease-in-out infinite;
   }
 }
 
-@keyframes today-glow {
+@keyframes today-border-glow {
   0%, 100% {
+    border-color: #c9a000;
     box-shadow:
-      inset 0 0 0 4px #00d4ff,
-      inset 0 0 0 7px rgba(0, 212, 255, 0.35),
-      0 0 14px rgba(0, 212, 255, 0.45);
+      inset 0 0 0 1px rgba(255, 240, 80, 0.75),
+      inset 0 0 10px rgba(255, 215, 0, 0.45);
   }
   50% {
+    border-color: var(--today-neon);
     box-shadow:
-      inset 0 0 0 5px #00e8ff,
-      inset 0 0 0 9px rgba(0, 232, 255, 0.45),
-      0 0 22px rgba(0, 232, 255, 0.75);
+      inset 0 0 0 2px rgba(255, 255, 100, 0.95),
+      inset 0 0 16px rgba(255, 244, 0, 0.65);
   }
 }
 
@@ -310,7 +297,6 @@ html, body {
   overflow: hidden;
   display: flex;
   align-items: center;
-  font-size: 0.75rem;
   font-weight: 700;
   line-height: 1.15;
   padding: 1px 3px;

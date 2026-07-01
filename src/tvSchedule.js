@@ -7,13 +7,10 @@ const DEPT_COL_LABEL = '진로입학상담부';
 const REF_PANEL = { width: 750, height: 700 };
 const STATUS_WIDTH_RATIO = 0.50;
 const REF_COL = { day: 34, wd: 34, guide: 58 };
-const REF_FONT = { header: 13, date: 16 };
+const REF_FONT = { header: 13, date: 16, event: 16 };
+const EVENT_FONT_MAX_PX = 30;
+const EVENT_TV_BOOST = 1.3;
 const BASE_MIN_LINE_H = 26;
-
-const DEPT_NAMES = [
-  '교무부', '학생부', '행정실', '학년부', '학년진학부',
-  '과학영재부', '교육연구부', '진로입학상담부',
-];
 
 const MIN_LINE_H = BASE_MIN_LINE_H;
 const MIN_DAY_ROW_H = BASE_MIN_LINE_H;
@@ -83,6 +80,7 @@ function layoutScheduleContent(root, leftDays, rightDays) {
   const run = () => {
     syncScheduleScale(root);
     applyScheduleRowHeights(root, leftDays, rightDays, getTvScale(root));
+    syncDeptColumnWidth(root, getSchoolInfoFontSize());
     const fontSize = applyColumnFonts(root);
     syncDeptColumnWidth(root, fontSize);
   };
@@ -94,6 +92,7 @@ function layoutScheduleContent(root, leftDays, rightDays) {
 export function reapplyScheduleFonts() {
   const root = document.querySelector('.tv-schedule');
   if (!root) return;
+  syncDeptColumnWidth(root, getSchoolInfoFontSize());
   const fontSize = applyColumnFonts(root);
   syncDeptColumnWidth(root, fontSize);
 }
@@ -152,7 +151,7 @@ function buildColumn(days, today, onGradeHover) {
 
 function buildRowLines(dayInfo) {
   const events = dayInfo.events || [];
-  const depts = (dayInfo.departments || []).map(extractDeptName);
+  const depts = dayInfo.departments || [];
   const guides = dayInfo.lifeGuides || [];
   const eventColors = dayInfo.eventColors || [];
   const deptColors = dayInfo.departmentColors || [];
@@ -195,12 +194,6 @@ function isCompactDay(dayInfo) {
   return !hasActivity(dayInfo);
 }
 
-function isDepartureDay(dayInfo, lines) {
-  if (dayInfo.weekday === '토') return false;
-  if (lines.some((line) => line.event && isHolidayEvent(line.event))) return false;
-  return !lines.some((line) => line.guide?.trim());
-}
-
 function getMergedGuide(lines) {
   const guides = lines.map((line) => line.guide?.trim() ?? '');
   const nonEmpty = guides.filter(Boolean);
@@ -215,14 +208,13 @@ function buildDayRow(dayInfo, today, onGradeHover) {
   const lines = buildRowLines(dayInfo);
   const isSaturday = dayInfo.weekday === '토';
   const isHoliday = lines.some((line) => line.event && isHolidayEvent(line.event));
-  const isDeparture = isDepartureDay(dayInfo, lines);
   const isCompact = isCompactDay(dayInfo);
   const isToday = today
     && today.day === dayInfo.day
     && today.weekday === dayInfo.weekday;
   const lineCount = lines.length;
 
-  row.className = `tv-day-row${isToday ? ' today' : ''}${isCompact ? ' compact-day' : ' has-events'}${isDeparture ? ' departure-day' : ''}`;
+  row.className = `tv-day-row${isToday ? ' today' : ''}${isCompact ? ' compact-day' : ' has-events'}`;
   row.dataset.lines = String(lineCount);
 
   const dateCell = document.createElement('div');
@@ -369,6 +361,46 @@ function layoutColumnRows(body, days, bodyHeight) {
   });
 }
 
+function isTvDisplayMode() {
+  return Boolean(
+    document.fullscreenElement
+    || document.webkitFullscreenElement
+    || document.msFullscreenElement,
+  );
+}
+
+function getEventFontBoost() {
+  return isTvDisplayMode() ? EVENT_TV_BOOST : 1;
+}
+
+function getEventFontSizeRange(root) {
+  const scale = getTvScale(root);
+  const schoolSize = getSchoolInfoFontSize();
+  const boost = getEventFontBoost();
+  const base = REF_FONT.event * scale * boost;
+  const minPx = Math.max(schoolSize, Math.round(base * 0.85));
+  const maxPx = Math.min(EVENT_FONT_MAX_PX, Math.round(base * 1.15));
+  return {
+    minPx: Math.min(minPx, maxPx),
+    maxPx: Math.max(minPx, maxPx),
+  };
+}
+
+function applyEventCellFont(textEl, cell, root) {
+  const { minPx, maxPx } = getEventFontSizeRange(root);
+  const pad = cellPadding(cell);
+  textEl.style.maxWidth = `${Math.max(cell.clientWidth - pad.w, 0)}px`;
+
+  for (let size = maxPx; size >= minPx; size -= 1) {
+    applyCellTextStyle(textEl, size, { nowrap: false });
+    textEl.style.letterSpacing = '0px';
+    if (cellFits(textEl, cell)) return;
+  }
+
+  applyCellTextStyle(textEl, minPx, { nowrap: false });
+  tightenLetterSpacing(textEl, cell);
+}
+
 function applyCellTextStyle(textEl, fontSize, { nowrap = false } = {}) {
   textEl.style.whiteSpace = nowrap ? 'nowrap' : 'normal';
   textEl.style.wordBreak = nowrap ? 'normal' : 'keep-all';
@@ -409,8 +441,12 @@ function measureTextWidth(text, fontSizePx) {
 }
 
 function syncDeptColumnWidth(root, fontSizePx) {
-  const width = Math.ceil(measureTextWidth(DEPT_COL_LABEL, fontSizePx)) + 8;
-  root.style.setProperty('--tv-col-dept', `${width}px`);
+  let maxW = measureTextWidth(DEPT_COL_LABEL, fontSizePx);
+  root.querySelectorAll('.tv-dept-line').forEach((el) => {
+    const text = el.textContent?.trim();
+    if (text) maxW = Math.max(maxW, measureTextWidth(text, fontSizePx));
+  });
+  root.style.setProperty('--tv-col-dept', `${Math.ceil(maxW) + 8}px`);
 }
 
 function cellPadding(cellEl) {
@@ -461,7 +497,7 @@ export function applyColumnFonts(root) {
   ].map((el) => ({ textEl: el, cell: el }));
 
   eventItems.forEach((item) => {
-    applyCellFontAtSchoolSize(item.textEl, item.cell, targetSize);
+    applyEventCellFont(item.textEl, item.cell, root);
   });
 
   deptItems.forEach((item) => {
@@ -521,13 +557,6 @@ function applyRowHeights(body, days) {
       el.style.minHeight = `${rowH}px`;
     });
   });
-}
-
-function extractDeptName(raw) {
-  if (!raw) return '';
-  const parts = raw.split('/').map((p) => p.trim());
-  const deptParts = parts.filter((p) => DEPT_NAMES.includes(p) || (p.endsWith('부') && p.length >= 3));
-  return [...new Set(deptParts)].join('/');
 }
 
 function getToday(year, month) {
