@@ -9,6 +9,8 @@ const REF_COL = { day: 34, wd: 34, guide: 58 };
 const REF_FONT = { header: 13, date: 16, event: 16 };
 const EVENT_FONT_MAX_PX = 30;
 const EVENT_TV_BOOST = 1.3;
+const GUIDE_FONT_BOOST = 1.22;
+const GUIDE_FONT_MAX_PX = 22;
 const BASE_MIN_LINE_H = 26;
 
 const MIN_LINE_H = BASE_MIN_LINE_H;
@@ -38,13 +40,18 @@ export function renderTvSchedule(container, dayData, onGradeHover, options = {})
   const root = document.createElement('div');
   root.className = 'tv-schedule';
 
-  root.appendChild(buildColumn(leftDays, today, onGradeHover));
-  root.appendChild(buildColumn(rightDays, today, onGradeHover));
+  const columnLabels = {
+    events: options.eventColumnLabel ?? '주요활동',
+    guide: options.guideColumnLabel ?? '생활지도',
+  };
+
+  root.appendChild(buildColumn(leftDays, today, onGradeHover, columnLabels));
+  root.appendChild(buildColumn(rightDays, today, onGradeHover, columnLabels));
 
   container.appendChild(root);
 
   const titleEl = document.getElementById('schedule-title');
-  if (titleEl) titleEl.textContent = formatScheduleTitle(year, month);
+  if (titleEl) titleEl.textContent = formatScheduleTitle();
 
   requestAnimationFrame(() => {
     layoutScheduleContent(root, leftDays, rightDays);
@@ -80,6 +87,7 @@ function layoutScheduleContent(root, leftDays, rightDays) {
     syncScheduleScale(root);
     applyScheduleRowHeights(root, leftDays, rightDays, getTvScale(root));
     applyColumnFonts(root);
+    syncGuideColumnWidth(root);
   };
 
   syncStatusLayout();
@@ -90,6 +98,7 @@ export function reapplyScheduleFonts() {
   const root = document.querySelector('.tv-schedule');
   if (!root) return;
   applyColumnFonts(root);
+  syncGuideColumnWidth(root);
 }
 
 export function syncStatusLayout() {
@@ -112,24 +121,41 @@ export function syncStatusLayout() {
   panel.style.width = `${contentWidth}px`;
 }
 
-function formatScheduleTitle(_calendarYear, month) {
-  return `${month}월 학사 운영 계획`;
+function formatScheduleTitle() {
+  return `${new Date().getMonth() + 1}월 학사 운영 계획`;
 }
 
-function buildColumn(days, today, onGradeHover) {
+export function updateScheduleTitle() {
+  const titleEl = document.getElementById('schedule-title');
+  if (titleEl) titleEl.textContent = formatScheduleTitle();
+}
+
+function buildColumn(days, today, onGradeHover, columnLabels = {}) {
+  const eventLabel = columnLabels.events ?? '주요활동';
+  const guideLabel = columnLabels.guide ?? '생활지도';
+
   const col = document.createElement('div');
   col.className = 'tv-col';
 
   const head = document.createElement('div');
   head.className = 'tv-col-head';
-  head.innerHTML = `
-    <div class="tv-col-headers">
-      <span class="tv-th">일</span>
-      <span class="tv-th">요일</span>
-      <span class="tv-th events">주요활동</span>
-      <span class="tv-th guide">생활지도</span>
-    </div>
-  `;
+
+  const headerRow = document.createElement('div');
+  headerRow.className = 'tv-col-headers';
+
+  [
+    ['일', ''],
+    ['요일', ''],
+    [eventLabel, 'events'],
+    [guideLabel, 'guide'],
+  ].forEach(([text, extraClass]) => {
+    const th = document.createElement('span');
+    th.className = extraClass ? `tv-th ${extraClass}` : 'tv-th';
+    th.textContent = text;
+    headerRow.appendChild(th);
+  });
+
+  head.appendChild(headerRow);
   col.appendChild(head);
 
   const body = document.createElement('div');
@@ -198,6 +224,15 @@ function getMergedGuide(lines) {
   return null;
 }
 
+function createGuideText(name, color) {
+  const text = document.createElement('span');
+  text.className = 'tv-guide-text';
+  text.textContent = name;
+  text.title = name;
+  applyTextColor(text, color);
+  return text;
+}
+
 function buildDayRow(dayInfo, today, onGradeHover) {
   const row = document.createElement('div');
   const lines = buildRowLines(dayInfo);
@@ -259,9 +294,10 @@ function buildDayRow(dayInfo, today, onGradeHover) {
   if (mergedGuide) {
     const el = document.createElement('span');
     el.className = 'tv-guide-merged';
-    el.textContent = mergedGuide;
-    el.title = mergedGuide;
-    applyTextColor(el, lines.find((line) => line.guide?.trim())?.guideColor);
+    el.appendChild(createGuideText(
+      mergedGuide,
+      lines.find((line) => line.guide?.trim())?.guideColor,
+    ));
     guideCell.appendChild(el);
   } else {
     lines.forEach((line) => {
@@ -269,9 +305,7 @@ function buildDayRow(dayInfo, today, onGradeHover) {
       const el = document.createElement('span');
       el.className = 'tv-guide-line';
       if (guide) {
-        el.textContent = guide;
-        el.title = guide;
-        applyTextColor(el, line.guideColor);
+        el.appendChild(createGuideText(guide, line.guideColor));
       }
       guideCell.appendChild(el);
     });
@@ -413,23 +447,69 @@ function tightenLetterSpacing(textEl, cell) {
   }
 }
 
-function cellPadding(cellEl) {
-  return cellEl.classList.contains('tv-event') ? { w: 6, h: 4 } : { w: 4, h: 2 };
+function applyGuideCellFont(textEl, cell) {
+  const schoolSize = getSchoolInfoFontSize();
+  const pad = cellPadding(cell);
+  const maxH = cell.clientHeight - pad.h;
+  const heightCap = maxH > 0 ? Math.floor(maxH / 1.15) : GUIDE_FONT_MAX_PX;
+  const minPx = schoolSize;
+  const maxPx = Math.max(
+    minPx,
+    Math.min(GUIDE_FONT_MAX_PX, Math.round(schoolSize * GUIDE_FONT_BOOST), heightCap),
+  );
+
+  for (let size = maxPx; size >= minPx; size -= 1) {
+    applyCellTextStyle(textEl, size, { nowrap: true });
+    textEl.style.letterSpacing = '0px';
+    if (cellFits(textEl, cell)) {
+      applyGuideStyle(textEl);
+      return size;
+    }
+  }
+
+  applyCellTextStyle(textEl, minPx, { nowrap: true });
+  tightenLetterSpacing(textEl, cell);
+  applyGuideStyle(textEl);
+  return minPx;
 }
 
-function applyCellFontAtSchoolSize(textEl, cell, targetSize, { allowWrap = false } = {}) {
-  const isGuideLine = textEl.classList.contains('tv-guide-line');
-  const isMerged = textEl.classList.contains('tv-guide-merged');
-  const nowrap = !allowWrap && isGuideLine;
-  const measureCell = (isGuideLine || isMerged) ? textEl : cell;
+function applyGuideStyle(textEl) {
+  textEl.style.fontWeight = '800';
+  textEl.style.textAlign = 'center';
+  textEl.style.width = '100%';
+  textEl.style.display = 'block';
+}
 
-  applyCellTextStyle(textEl, targetSize, { nowrap });
-  textEl.style.letterSpacing = '0px';
-  textEl.style.maxWidth = '';
+function measureTextWidth(text, fontSizePx) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return text.length * fontSizePx * 0.9;
+  ctx.font = `800 ${fontSizePx}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`;
+  return ctx.measureText(text).width;
+}
 
-  if (!cellFits(textEl, measureCell)) {
-    tightenLetterSpacing(textEl, measureCell);
+function syncGuideColumnWidth(root) {
+  const scale = getTvScale(root);
+  let maxW = REF_COL.guide * scale;
+
+  root.querySelectorAll('.tv-guide-text').forEach((el) => {
+    const text = el.textContent?.trim();
+    if (!text) return;
+    const px = Number.parseFloat(getComputedStyle(el).fontSize) || getSchoolInfoFontSize();
+    maxW = Math.max(maxW, measureTextWidth(text, px));
+  });
+
+  const guideHeader = root.querySelector('.tv-th.guide');
+  if (guideHeader?.textContent?.trim()) {
+    const headerPx = Number.parseFloat(getComputedStyle(root).getPropertyValue('--tv-header-font')) || 13;
+    maxW = Math.max(maxW, measureTextWidth(guideHeader.textContent.trim(), headerPx * 0.92));
   }
+
+  root.style.setProperty('--tv-col-guide', `${Math.ceil(maxW) + 8}px`);
+}
+
+function cellPadding(cellEl) {
+  return cellEl.classList.contains('tv-event') ? { w: 6, h: 4 } : { w: 4, h: 2 };
 }
 
 export function applyColumnFonts(root) {
@@ -443,18 +523,20 @@ export function applyColumnFonts(root) {
     }))
     .filter((item) => item.cell);
 
-  const guideItems = [
-    ...[...root.querySelectorAll('.tv-guide-line')].filter((el) => el.textContent?.trim()),
-    ...[...root.querySelectorAll('.tv-guide-merged')].filter((el) => el.textContent?.trim()),
-  ].map((el) => ({ textEl: el, cell: el }));
+  const guideItems = [...root.querySelectorAll('.tv-guide-text')]
+    .filter((el) => el.textContent?.trim())
+    .map((textEl) => ({
+      textEl,
+      cell: textEl.closest('.tv-guide-line, .tv-guide-merged'),
+    }))
+    .filter((item) => item.cell);
 
   eventItems.forEach((item) => {
     applyEventCellFont(item.textEl, item.cell, root);
   });
 
   guideItems.forEach((item) => {
-    const isMerged = item.textEl.classList.contains('tv-guide-merged');
-    applyCellFontAtSchoolSize(item.textEl, item.cell, targetSize, { allowWrap: isMerged });
+    applyGuideCellFont(item.textEl, item.cell);
   });
 
   return targetSize;
@@ -522,9 +604,12 @@ function getToday(year, month) {
 
 export function getScheduleOptions(meta = {}) {
   const now = new Date();
+  const columns = meta.columns ?? {};
   return {
     year: meta.year ?? now.getFullYear(),
     month: meta.month ?? now.getMonth() + 1,
+    eventColumnLabel: columns.events ?? meta.eventColumnLabel ?? '주요활동',
+    guideColumnLabel: columns.guide ?? meta.guideColumnLabel ?? '생활지도',
   };
 }
 

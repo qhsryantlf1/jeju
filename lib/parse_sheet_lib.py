@@ -203,6 +203,8 @@ def detect_sheet_columns(ws) -> dict:
             "dept_col": dept_col,
             "guide_col": guide_col,
             "header_row": row,
+            "event_label": labels.get(event_col, "주요활동"),
+            "guide_label": labels.get(guide_col, "생활지도"),
         }
 
     return {
@@ -210,6 +212,8 @@ def detect_sheet_columns(ws) -> dict:
         "dept_col": 4,
         "guide_col": 5,
         "header_row": 3,
+        "event_label": "주요활동",
+        "guide_label": "생활지도",
     }
 
 
@@ -257,6 +261,10 @@ def _finalize_day_entry(ws, row: int, day: int, weekday: str,
 def parse_sheet_workbook(ws) -> tuple[list, dict]:
     meta = parse_title_meta(ws)
     cols = detect_sheet_columns(ws)
+    meta["columns"] = {
+        "events": cols["event_label"],
+        "guide": cols["guide_label"],
+    }
     days = []
 
     current = None
