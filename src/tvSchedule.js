@@ -11,11 +11,6 @@ const EVENT_FONT_MAX_PX = 30;
 const EVENT_TV_BOOST = 1.3;
 const GUIDE_FONT_BOOST = 1.22;
 const GUIDE_FONT_MAX_PX = 22;
-const BASE_MIN_LINE_H = 26;
-
-const MIN_LINE_H = BASE_MIN_LINE_H;
-const MIN_DAY_ROW_H = BASE_MIN_LINE_H;
-const COMPACT_ROW_H = BASE_MIN_LINE_H;
 
 export function renderTvSchedule(container, dayData, onGradeHover, options = {}) {
   const year = options.year ?? 2026;
@@ -85,7 +80,7 @@ function syncScheduleScale(root) {
 function layoutScheduleContent(root, leftDays, rightDays) {
   const run = () => {
     syncScheduleScale(root);
-    applyScheduleRowHeights(root, leftDays, rightDays, getTvScale(root));
+    applyScheduleRowHeights(root, leftDays, rightDays);
     applyColumnFonts(root);
     syncGuideColumnWidth(root);
   };
@@ -123,11 +118,6 @@ export function syncStatusLayout() {
 
 function formatScheduleTitle() {
   return `${new Date().getMonth() + 1}월 학사 운영 계획`;
-}
-
-export function updateScheduleTitle() {
-  const titleEl = document.getElementById('schedule-title');
-  if (titleEl) titleEl.textContent = formatScheduleTitle();
 }
 
 function buildColumn(days, today, onGradeHover, columnLabels = {}) {
@@ -315,7 +305,7 @@ function buildDayRow(dayInfo, today, onGradeHover) {
   return row;
 }
 
-function applyScheduleRowHeights(root, leftDays, rightDays, _scale = 1) {
+function applyScheduleRowHeights(root, leftDays, rightDays) {
   const bodies = [...root.querySelectorAll('.tv-col-body')];
   const bodyHeight = bodies[0]?.clientHeight ?? 0;
   if (bodyHeight <= 0) return;
@@ -480,12 +470,13 @@ function applyGuideStyle(textEl) {
   textEl.style.display = 'block';
 }
 
+let measureCtx = null;
+
 function measureTextWidth(text, fontSizePx) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return text.length * fontSizePx * 0.9;
-  ctx.font = `800 ${fontSizePx}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`;
-  return ctx.measureText(text).width;
+  measureCtx ??= document.createElement('canvas').getContext('2d');
+  if (!measureCtx) return text.length * fontSizePx * 0.9;
+  measureCtx.font = `800 ${fontSizePx}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`;
+  return measureCtx.measureText(text).width;
 }
 
 function syncGuideColumnWidth(root) {
@@ -542,53 +533,6 @@ export function applyColumnFonts(root) {
   return targetSize;
 }
 
-function applyRowHeights(body, days) {
-  if (!body) return;
-  const bodyHeight = body.clientHeight;
-  if (bodyHeight <= 0) return;
-
-  const rows = [...body.querySelectorAll('.tv-day-row')];
-  const lineCounts = days.map((d) => buildRowLines(d).length);
-  const unitCounts = lineCounts.map((c) => (c === 0 ? 1 : c));
-  const totalUnits = unitCounts.reduce((s, c) => s + c, 0);
-  const lineH = totalUnits > 0
-    ? Math.max(MIN_LINE_H, bodyHeight / totalUnits)
-    : MIN_LINE_H;
-
-  rows.forEach((row, i) => {
-    const lc = lineCounts[i];
-    const units = unitCounts[i];
-
-    if (lc === 0) {
-      row.style.height = `${Math.max(lineH, MIN_DAY_ROW_H)}px`;
-      row.style.flex = 'none';
-      return;
-    }
-
-    const rowH = Math.max(units * lineH, MIN_DAY_ROW_H);
-    const perLine = rowH / lc;
-    row.style.height = `${rowH}px`;
-    row.style.flex = 'none';
-
-    row.querySelectorAll('.tv-event').forEach((el) => {
-      el.style.height = `${perLine}px`;
-      el.style.minHeight = `${perLine}px`;
-      el.style.maxHeight = `${perLine}px`;
-      el.style.lineHeight = '1.15';
-    });
-    row.querySelectorAll('.tv-guide-line').forEach((el) => {
-      el.style.height = `${perLine}px`;
-      el.style.minHeight = `${perLine}px`;
-      el.style.maxHeight = `${perLine}px`;
-      el.style.lineHeight = '1.15';
-    });
-    row.querySelectorAll('.tv-guide-merged').forEach((el) => {
-      el.style.height = '100%';
-      el.style.minHeight = `${rowH}px`;
-    });
-  });
-}
-
 function getToday(year, month) {
   const now = new Date();
   if (now.getFullYear() !== year || now.getMonth() + 1 !== month) {
@@ -612,5 +556,3 @@ export function getScheduleOptions(meta = {}) {
     guideColumnLabel: columns.guide ?? meta.guideColumnLabel ?? '생활지도',
   };
 }
-
-export { applyRowHeights, applyScheduleRowHeights };

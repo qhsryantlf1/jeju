@@ -1,4 +1,3 @@
-import { loadCalendarData } from './pdfParser.js';
 import { fetchSheetCalendar } from './sheetCalendar.js';
 import { fetchSheetStatus } from './sheetStatus.js';
 import { saveUploadedCalendar, loadUploadedCalendar } from './calendarStorage.js';
@@ -10,52 +9,37 @@ const WEEKDAY_LABELS = ['일요일', '월요일', '화요일', '수요일', '목
 
 const pdfViewerEl = document.getElementById('pdf-viewer');
 const statusClockEl = document.getElementById('status-clock');
+const clockDateEl = statusClockEl?.querySelector('.status-clock-date');
+const clockTimeEl = statusClockEl?.querySelector('.status-clock-time');
 let scheduleMeta = {};
 let lastTodayKey = '';
 let todayRefreshTimer = null;
-let currentBuffer = null;
 let cachedCalendarData = null;
-let useCachedLayout = true;
-let sharedSavedAt = 0;
 let calendarDataHash = '';
+let statusDataHash = '';
 
-function cloneBuffer(buffer) {
-  return buffer.slice(0);
-}
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const toast = document.getElementById('toast');
-const modal = document.getElementById('modal');
-const modalText = document.getElementById('modal-text');
-const modalClose = document.getElementById('modal-close');
-
-function setGradeHighlight(grade) {
-  setStatusGradeHighlight(grade);
-}
 
 function showViewerError(message) {
   pdfViewerEl.innerHTML = `<div class="viewer-error"><p>⚠️ ${message}</p><p class="viewer-error-hint">개발 서버로 접속해 주세요: <code>npm run dev</code> → http://localhost:5173</p></div>`;
 }
 
-async function renderBoard(buffer, reparsing = true) {
-  currentBuffer = cloneBuffer(buffer);
-  try {
-    if (reparsing) {
-      pdfViewerEl.innerHTML = '<div class="viewer-loading">일정 불러오는 중...</div>';
-      cachedCalendarData = await loadCalendarData(cloneBuffer(currentBuffer), {
-        forceParse: !useCachedLayout,
-      });
-    }
-    renderTvSchedule(pdfViewerEl, cachedCalendarData, setGradeHighlight, getScheduleOptions(scheduleMeta));
-    lastTodayKey = new Date().toDateString();
-  } catch (err) {
-    console.error('게시판 렌더 실패:', err);
-    showViewerError(err.message || '일정을 표시할 수 없습니다.');
-  }
+function renderCachedSchedule() {
+  renderTvSchedule(pdfViewerEl, cachedCalendarData, setStatusGradeHighlight, getScheduleOptions(scheduleMeta));
+  lastTodayKey = new Date().toDateString();
 }
 
-function renderCachedSchedule() {
-  renderTvSchedule(pdfViewerEl, cachedCalendarData, setGradeHighlight, getScheduleOptions(scheduleMeta));
-  lastTodayKey = new Date().toDateString();
+/** PDF 파싱은 최후 수단이므로 pdfjs-dist는 이때만 동적 로드 */
+async function renderPdfFallback() {
+  const res = await fetch('/assets/calendar.pdf');
+  if (!res.ok) throw new Error(`PDF 파일을 찾을 수 없습니다 (${res.status})`);
+  const buffer = await res.arrayBuffer();
+
+  pdfViewerEl.innerHTML = '<div class="viewer-loading">일정 불러오는 중...</div>';
+  const { loadCalendarData } = await import('./pdfParser.js');
+  cachedCalendarData = await loadCalendarData(buffer);
+  renderCachedSchedule();
 }
 
 function applyCalendarData(data, meta = {}) {
@@ -65,30 +49,26 @@ function applyCalendarData(data, meta = {}) {
   cachedCalendarData = data;
   scheduleMeta = meta;
   calendarDataHash = hash;
-  useCachedLayout = false;
   saveUploadedCalendar(cachedCalendarData, scheduleMeta);
   renderCachedSchedule();
   return true;
 }
 
-function applySharedCalendar(shared) {
-  applyCalendarData(shared.data, shared.meta ?? {});
-  sharedSavedAt = shared.savedAt ?? 0;
-}
-
 async function loadSheetCalendar() {
   const sheet = await fetchSheetCalendar();
   applyCalendarData(sheet.data, sheet.meta ?? {});
-  return true;
 }
 
 async function loadSheetStatus() {
   const status = await fetchSheetStatus();
+  const hash = JSON.stringify(status);
+  if (hash === statusDataHash) return;
+
+  statusDataHash = hash;
   await renderStatusPanel(status);
   syncStatusLayout();
   refitStatusTables();
   reapplyScheduleFonts();
-  return true;
 }
 
 async function init() {
@@ -110,7 +90,7 @@ async function init() {
     try {
       const shared = await fetchSharedCalendar();
       if (shared?.data?.length) {
-        applySharedCalendar(shared);
+        applyCalendarData(shared.data, shared.meta ?? {});
         await statusPromise;
         return;
       }
@@ -122,16 +102,12 @@ async function init() {
     if (stored) {
       cachedCalendarData = stored.data;
       scheduleMeta = stored.meta ?? {};
-      sharedSavedAt = stored.savedAt ?? 0;
-      useCachedLayout = false;
       renderCachedSchedule();
       await statusPromise;
       return;
     }
 
-    const res = await fetch('/assets/calendar.pdf');
-    if (!res.ok) throw new Error(`PDF 파일을 찾을 수 없습니다 (${res.status})`);
-    await renderBoard(await res.arrayBuffer());
+    await renderPdfFallback();
     await statusPromise;
   } catch (err) {
     console.error('초기화 실패:', err);
@@ -156,11 +132,6 @@ function showToast(msg) {
   setTimeout(() => toast.classList.add('hidden'), 2500);
 }
 
-function showModal(msg) {
-  modalText.innerHTML = msg;
-  modal.classList.remove('hidden');
-}
-
 function isFullscreenActive() {
   return Boolean(
     document.fullscreenElement
@@ -172,7 +143,7 @@ function isFullscreenActive() {
 function updateFullscreenButton() {
   if (!fullscreenBtn) return;
   const active = isFullscreenActive();
-  fullscreenBtn.textContent = active ? '나가기' : '전체화면';
+  fullscreenBtn.textContent = '⛶';
   fullscreenBtn.title = active ? '전체화면 나가기 (Esc)' : '전체화면 (F11)';
 }
 
@@ -196,16 +167,9 @@ async function toggleFullscreen() {
 }
 
 fullscreenBtn?.addEventListener('click', toggleFullscreen);
-document.addEventListener('fullscreenchange', () => {
-  updateFullscreenButton();
-  if (cachedCalendarData) {
-    requestAnimationFrame(() => {
-      renderCachedSchedule();
-      reapplyScheduleFonts();
-    });
-  }
-});
-document.addEventListener('webkitfullscreenchange', () => {
+
+const fullscreenEvent = 'onfullscreenchange' in document ? 'fullscreenchange' : 'webkitfullscreenchange';
+document.addEventListener(fullscreenEvent, () => {
   updateFullscreenButton();
   if (cachedCalendarData) {
     requestAnimationFrame(() => {
@@ -216,21 +180,13 @@ document.addEventListener('webkitfullscreenchange', () => {
 });
 updateFullscreenButton();
 
-modalClose.addEventListener('click', () => modal.classList.add('hidden'));
-modal.addEventListener('click', (e) => {
-  if (e.target === modal) modal.classList.add('hidden');
-});
-
 function updateStatusClock() {
-  if (!statusClockEl) return;
   const now = new Date();
-  const dateEl = statusClockEl.querySelector('.status-clock-date');
-  const timeEl = statusClockEl.querySelector('.status-clock-time');
-  if (dateEl) {
-    dateEl.textContent = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAY_LABELS[now.getDay()]}`;
+  if (clockDateEl) {
+    clockDateEl.textContent = `${now.getFullYear()}년 ${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAY_LABELS[now.getDay()]}`;
   }
-  if (timeEl) {
-    timeEl.textContent = now.toLocaleTimeString('ko-KR', {
+  if (clockTimeEl) {
+    clockTimeEl.textContent = now.toLocaleTimeString('ko-KR', {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false,
@@ -248,6 +204,7 @@ function scheduleTodayRefresh() {
   }, nextMidnight - now + 1000);
 }
 
+/** 1분 주기: 날짜 변경 감지 (로컬 연산만, 네트워크 없음) */
 setInterval(() => {
   const todayKey = new Date().toDateString();
   if (todayKey !== lastTodayKey && cachedCalendarData) {
@@ -255,21 +212,11 @@ setInterval(() => {
   }
 }, 60_000);
 
-setInterval(async () => {
-  try {
-    await loadSheetCalendar();
-  } catch {
-    /* 시트 동기화 실패는 무시 */
-  }
-}, 60_000);
-
-setInterval(async () => {
-  try {
-    await loadSheetStatus();
-  } catch {
-    /* 학생/학교 정보 동기화 실패는 무시 */
-  }
-}, 60_000);
+/** 5분 주기: 시트 동기화 (서버 캐시 TTL과 맞춤, 데이터가 같으면 재렌더 없음) */
+setInterval(() => {
+  loadSheetCalendar().catch(() => { /* 시트 동기화 실패는 무시 */ });
+  loadSheetStatus().catch(() => { /* 학생/학교 정보 동기화 실패는 무시 */ });
+}, 5 * 60_000);
 
 updateStatusClock();
 setInterval(updateStatusClock, 1000);

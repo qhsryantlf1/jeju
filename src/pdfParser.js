@@ -18,47 +18,8 @@ export async function loadFallbackData() {
   return expandAllDays(data);
 }
 
-/** pdfplumber 서버 파싱 (업로드용) */
-export async function parsePdfViaApi(buffer, file = null) {
-  let res;
-
-  if (file) {
-    const form = new FormData();
-    form.append('file', file);
-    res = await fetch('/api/parse-pdf', { method: 'POST', body: form });
-  } else {
-    res = await fetch('/api/parse-pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/pdf' },
-      body: buffer,
-    });
-  }
-
-  if (!res.ok) {
-    const payload = await res.json().catch(() => ({}));
-    if (res.status === 404) {
-      throw new Error('PDF 파싱 서버를 찾을 수 없습니다. Vercel 재배포 후 다시 시도해 주세요.');
-    }
-    throw new Error(
-      payload.error || `PDF 파싱 실패 (HTTP ${res.status})`,
-    );
-  }
-
-  return expandAllDays(await res.json());
-}
-
-/** 업로드 PDF는 서버(pdfplumber) 파싱, 기본은 JSON 사용 */
-export async function loadCalendarData(buffer, { forceParse = false, file = null } = {}) {
-  if (forceParse) {
-    const parsed = await parsePdfViaApi(buffer, file);
-    if (validateParsed(parsed)) return parsed;
-    if (parsed.length >= 3 && parsed.some((d) => d.events?.length)) {
-      console.warn('파싱 검증 일부 미통과, 결과 사용');
-      return parsed;
-    }
-    throw new Error('업로드한 PDF를 인식하지 못했습니다. 학사일정 표 형식 PDF인지 확인해 주세요.');
-  }
-
+/** 기본은 사전 파싱 JSON 사용, 실패 시 브라우저 pdfjs 파싱 */
+export async function loadCalendarData(buffer) {
   try {
     const json = await loadFallbackData();
     if (validateParsed(json)) return json;

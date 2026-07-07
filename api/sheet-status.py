@@ -18,6 +18,9 @@ class handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Access-Control-Allow-Origin", "*")
+        if status == 200:
+            # Vercel CDN 캐시: 함수 실행을 5분에 1회로 제한해 CPU 사용 절감
+            self.send_header("Cache-Control", "public, s-maxage=300, stale-while-revalidate=3600")
         self.end_headers()
         self.wfile.write(body)
 

@@ -58,14 +58,16 @@ function buildTable(tableData, { headerRowIndex = null, gradeRows = false } = {}
   return table;
 }
 
+let measureCtx = null;
+
 function tuneStudentColWidths(table) {
   const wrap = table.closest('.status-sheet-inner');
   const colgroup = table.querySelector('colgroup');
   if (!wrap || !colgroup || colgroup.children.length < 6 || wrap.clientWidth <= 0) return;
 
   const fontSize = Number.parseFloat(getComputedStyle(table).fontSize) || 12;
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
+  measureCtx ??= document.createElement('canvas').getContext('2d');
+  const ctx = measureCtx;
   if (!ctx) return;
   ctx.font = `700 ${fontSize}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`;
 
@@ -127,6 +129,20 @@ export function getSchoolInfoFontSize() {
   return cachedSchoolFontPx;
 }
 
+/** 전체화면 버튼을 학교 정보 표 제목 행 오른쪽 끝에 배치 */
+function placeFullscreenButton(schoolTable) {
+  const btn = document.getElementById('fullscreen-btn');
+  if (!btn) return;
+
+  const titleTd = schoolTable.querySelector('.status-title-row td')
+    ?? schoolTable.rows[0]?.cells[0];
+  if (!titleTd) return;
+
+  titleTd.style.position = 'relative';
+  titleTd.appendChild(btn);
+  btn.hidden = false;
+}
+
 export function renderStatusPanel(payload) {
   const studentEl = document.getElementById('student-status');
   const schoolEl = document.getElementById('school-info');
@@ -158,6 +174,7 @@ export function renderStatusPanel(payload) {
   const schoolTable = buildTable(payload.school);
   schoolInner.appendChild(schoolTable);
   schoolEl.appendChild(schoolInner);
+  placeFullscreenButton(schoolTable);
 
   return new Promise((resolve) => {
     requestAnimationFrame(() => {

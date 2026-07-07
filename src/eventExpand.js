@@ -70,6 +70,19 @@ export function expandDayEvents(day) {
     const guideColor = pickColor(rawGuideColors, idx);
     const lines = splitActivityText(event);
 
+    // 주요활동 칸이 비어 있어도 생활지도 담당자는 유지
+    if (lines.length === 0) {
+      if (guide?.trim()) {
+        events.push('');
+        departments.push(dept);
+        lifeGuides.push(guide);
+        eventColors.push(DEFAULT_COLOR);
+        departmentColors.push(deptColor);
+        lifeGuideColors.push(guideColor);
+      }
+      return;
+    }
+
     lines.forEach((line) => {
       events.push(line);
       departments.push(dept);

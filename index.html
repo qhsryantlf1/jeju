@@ -10,15 +10,6 @@
   <div id="app" class="board">
   <aside class="calendar-panel">
     <div id="pdf-viewer" class="schedule-panel"></div>
-    <footer class="calendar-toolbar">
-      <div class="color-legend">
-        <span class="legend-item color-pink">전일제</span>
-        <span class="legend-item color-red">공휴일</span>
-      </div>
-      <div class="toolbar-actions">
-        <button type="button" id="fullscreen-btn" class="upload-btn" title="전체화면 (F11)">전체화면</button>
-      </div>
-    </footer>
   </aside>
 
   <aside class="status-panel">
@@ -34,14 +25,9 @@
   </aside>
   </div>
 
-  <div id="toast" class="toast hidden"></div>
+  <button type="button" id="fullscreen-btn" class="fullscreen-btn" title="전체화면 (F11)" hidden>전체화면</button>
 
-  <div id="modal" class="modal hidden">
-    <div class="modal-box">
-      <p id="modal-text"></p>
-      <button id="modal-close">확인</button>
-    </div>
-  </div>
+  <div id="toast" class="toast hidden"></div>
 
   <script type="module" src="/src/main.js"></script>
 </body>
