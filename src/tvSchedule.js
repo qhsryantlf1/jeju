@@ -10,6 +10,7 @@ const REF_FONT = { header: 13, date: 16, event: 16 };
 const EVENT_FONT_MAX_PX = 30;
 const EVENT_TV_BOOST = 1.3;
 const EVENT_CELL_PAD_W = 6;
+const EVENT_CELL_PAD_H = 4;
 
 export function renderTvSchedule(container, dayData, onGradeHover, options = {}) {
   const year = options.year ?? 2026;
@@ -236,14 +237,64 @@ function applyScheduleRowHeights(root, leftDays, rightDays) {
   const bodies = [...root.querySelectorAll('.tv-col-body')];
   const bodyHeight = bodies[0]?.clientHeight ?? 0;
   if (bodyHeight <= 0) return;
+  const [leftBody, rightBody] = bodies;
+  if (!leftBody || !rightBody) return;
+
+  // The per-line height budget and the event font size are circular: the
+  // budget depends on how many rows need to wrap, and wrapping depends on
+  // the font size, which is capped by the budget. Iterate until they agree,
+  // so TV boost never demands a font taller than the row it has to fit in.
+  let unitH = Math.min(
+    baselineUnitHeight(bodyHeight, leftDays),
+    baselineUnitHeight(bodyHeight, rightDays),
+  );
+
+  for (let i = 0; i < 5; i += 1) {
+    root.dataset.eventUnitH = String(unitH);
+    const { minPx } = getEventFontSizeRange(root);
+    const nextUnitH = Math.min(
+      bodyHeight / columnWeight(leftBody, leftDays, minPx),
+      bodyHeight / columnWeight(rightBody, rightDays, minPx),
+    );
+    const settled = Math.abs(nextUnitH - unitH) < 0.25;
+    unitH = nextUnitH;
+    if (settled) break;
+  }
+  root.dataset.eventUnitH = String(unitH);
 
   [
-    { body: bodies[0], days: leftDays },
-    { body: bodies[1], days: rightDays },
+    { body: leftBody, days: leftDays },
+    { body: rightBody, days: rightDays },
   ].forEach(({ body, days }) => {
-    if (!body) return;
     layoutColumnRows(body, days, bodyHeight, root);
   });
+}
+
+function baselineUnitHeight(bodyHeight, days) {
+  const totalWeight = days.reduce((sum, day) => {
+    const lineCount = isCompactDay(day) ? 1 : Math.max(buildRowLines(day).length, 1);
+    return sum + lineCount;
+  }, 0);
+  return totalWeight > 0 ? bodyHeight / totalWeight : bodyHeight;
+}
+
+function getColumnWidth(body) {
+  const eventsWidth = body.querySelector('.tv-events')?.clientWidth ?? 0;
+  return Math.max(eventsWidth - EVENT_CELL_PAD_W, 0);
+}
+
+function dayLineNeeds(day, minPx, colWidth) {
+  return buildRowLines(day).map((line) => estimateWrappedLines(line.event, minPx, colWidth));
+}
+
+function columnWeight(body, days, minPx) {
+  const colWidth = getColumnWidth(body);
+  const total = days.reduce((sum, day) => {
+    if (isCompactDay(day)) return sum + 1;
+    const units = dayLineNeeds(day, minPx, colWidth).reduce((s, n) => s + n, 0);
+    return sum + Math.max(units, 1);
+  }, 0);
+  return total > 0 ? total : 1;
 }
 
 // Measures how many visual lines an event title needs at the given font size
@@ -278,14 +329,12 @@ function estimateWrappedLines(text, fontSizePx, widthPx) {
 
 function layoutColumnRows(body, days, bodyHeight, root) {
   const rows = [...body.querySelectorAll('.tv-day-row')];
-  const eventsWidth = body.querySelector('.tv-events')?.clientWidth ?? 0;
-  const colWidth = Math.max(eventsWidth - EVENT_CELL_PAD_W, 0);
+  const colWidth = getColumnWidth(body);
   const { minPx } = getEventFontSizeRange(root);
 
   const specs = days.map((day, i) => {
-    const lines = buildRowLines(day);
     const compact = isCompactDay(day);
-    const lineNeeds = lines.map((line) => estimateWrappedLines(line.event, minPx, colWidth));
+    const lineNeeds = compact ? [] : dayLineNeeds(day, minPx, colWidth);
     const units = lineNeeds.reduce((sum, n) => sum + n, 0);
     return {
       row: rows[i],
@@ -336,8 +385,16 @@ function getEventFontSizeRange(root) {
   const schoolSize = getSchoolInfoFontSize();
   const boost = getEventFontBoost();
   const base = REF_FONT.event * scale * boost;
-  const minPx = Math.max(schoolSize, Math.round(base * 0.85));
-  const maxPx = Math.min(EVENT_FONT_MAX_PX, Math.round(base * 1.15));
+
+  // TV boost can push the font past what a single row actually has room
+  // for; cap it so even a one-line entry never exceeds its row height.
+  const unitH = Number.parseFloat(root.dataset.eventUnitH);
+  const heightCap = Number.isFinite(unitH) && unitH > 0
+    ? Math.max(schoolSize, Math.floor((unitH - EVENT_CELL_PAD_H) / 1.15))
+    : Infinity;
+
+  const minPx = Math.min(Math.max(schoolSize, Math.round(base * 0.85)), heightCap);
+  const maxPx = Math.min(EVENT_FONT_MAX_PX, Math.round(base * 1.15), heightCap);
   return {
     minPx: Math.min(minPx, maxPx),
     maxPx: Math.max(minPx, maxPx),
@@ -391,7 +448,7 @@ function tightenLetterSpacing(textEl, cell) {
 }
 
 function cellPadding(cellEl) {
-  return cellEl.classList.contains('tv-event') ? { w: EVENT_CELL_PAD_W, h: 4 } : { w: 4, h: 2 };
+  return cellEl.classList.contains('tv-event') ? { w: EVENT_CELL_PAD_W, h: EVENT_CELL_PAD_H } : { w: 4, h: 2 };
 }
 
 export function applyColumnFonts(root) {
