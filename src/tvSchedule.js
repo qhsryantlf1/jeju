@@ -5,12 +5,11 @@ import { getSchoolInfoFontSize } from './statusPanel.js';
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const REF_PANEL = { width: 750, height: 700 };
 const STATUS_WIDTH_RATIO = 0.50;
-const REF_COL = { day: 34, wd: 34, guide: 58 };
+const REF_COL = { day: 34, wd: 34 };
 const REF_FONT = { header: 13, date: 16, event: 16 };
 const EVENT_FONT_MAX_PX = 30;
 const EVENT_TV_BOOST = 1.3;
-const GUIDE_FONT_BOOST = 1.22;
-const GUIDE_FONT_MAX_PX = 22;
+const EVENT_CELL_PAD_W = 6;
 
 export function renderTvSchedule(container, dayData, onGradeHover, options = {}) {
   const year = options.year ?? 2026;
@@ -25,7 +24,7 @@ export function renderTvSchedule(container, dayData, onGradeHover, options = {})
     const existing = dataMap.get(d);
     const weekday = existing?.weekday ?? WEEKDAYS[new Date(year, month - 1, d).getDay()];
     if (weekday === '일') continue;
-    allDays.push(existing ?? { day: d, weekday, events: [], departments: [], lifeGuides: [] });
+    allDays.push(existing ?? { day: d, weekday, events: [], departments: [] });
   }
 
   const leftDays = allDays.filter((d) => d.day <= 15);
@@ -37,7 +36,6 @@ export function renderTvSchedule(container, dayData, onGradeHover, options = {})
 
   const columnLabels = {
     events: options.eventColumnLabel ?? '주요활동',
-    guide: options.guideColumnLabel ?? '생활지도',
   };
 
   root.appendChild(buildColumn(leftDays, today, onGradeHover, columnLabels));
@@ -72,7 +70,6 @@ function syncScheduleScale(root) {
   root.style.setProperty('--tv-scale', s.toFixed(3));
   root.style.setProperty('--tv-col-day', `${Math.round(REF_COL.day * s)}px`);
   root.style.setProperty('--tv-col-wd', `${Math.round(REF_COL.wd * s)}px`);
-  root.style.setProperty('--tv-col-guide', `${Math.round(REF_COL.guide * s)}px`);
   root.style.setProperty('--tv-header-font', `${Math.max(11, Math.round(REF_FONT.header * s))}px`);
   root.style.setProperty('--tv-date-font', `${Math.max(12, Math.round(REF_FONT.date * s))}px`);
 }
@@ -82,7 +79,6 @@ function layoutScheduleContent(root, leftDays, rightDays) {
     syncScheduleScale(root);
     applyScheduleRowHeights(root, leftDays, rightDays);
     applyColumnFonts(root);
-    syncGuideColumnWidth(root);
   };
 
   syncStatusLayout();
@@ -93,7 +89,6 @@ export function reapplyScheduleFonts() {
   const root = document.querySelector('.tv-schedule');
   if (!root) return;
   applyColumnFonts(root);
-  syncGuideColumnWidth(root);
 }
 
 export function syncStatusLayout() {
@@ -122,7 +117,6 @@ function formatScheduleTitle() {
 
 function buildColumn(days, today, onGradeHover, columnLabels = {}) {
   const eventLabel = columnLabels.events ?? '주요활동';
-  const guideLabel = columnLabels.guide ?? '생활지도';
 
   const col = document.createElement('div');
   col.className = 'tv-col';
@@ -137,7 +131,6 @@ function buildColumn(days, today, onGradeHover, columnLabels = {}) {
     ['일', ''],
     ['요일', ''],
     [eventLabel, 'events'],
-    [guideLabel, 'guide'],
   ].forEach(([text, extraClass]) => {
     const th = document.createElement('span');
     th.className = extraClass ? `tv-th ${extraClass}` : 'tv-th';
@@ -161,34 +154,14 @@ function buildColumn(days, today, onGradeHover, columnLabels = {}) {
 
 function buildRowLines(dayInfo) {
   const events = dayInfo.events || [];
-  const guides = dayInfo.lifeGuides || [];
   const eventColors = dayInfo.eventColors || [];
-  const guideColors = dayInfo.lifeGuideColors || [];
 
-  const activityLines = events
+  return events
     .map((event, idx) => ({
       event: event?.trim() ?? '',
-      idx,
+      eventColor: eventColors[idx] ?? eventColors[0] ?? '',
     }))
     .filter(({ event }) => event);
-
-  if (activityLines.length > 0) {
-    return activityLines.map(({ event, idx }) => ({
-      event,
-      guide: guides[idx] ?? (guides.length === 1 ? guides[0] : ''),
-      eventColor: eventColors[idx] ?? eventColors[0] ?? '',
-      guideColor: guideColors[idx] ?? guideColors[0] ?? '',
-    }));
-  }
-
-  return guides
-    .filter((guide) => guide?.trim())
-    .map((guide, idx) => ({
-      event: '',
-      guide,
-      eventColor: '',
-      guideColor: guideColors[idx] ?? guideColors[0] ?? '',
-    }));
 }
 
 function applyTextColor(el, color) {
@@ -203,24 +176,6 @@ function hasActivity(dayInfo) {
 
 function isCompactDay(dayInfo) {
   return !hasActivity(dayInfo);
-}
-
-function getMergedGuide(lines) {
-  const guides = lines.map((line) => line.guide?.trim() ?? '');
-  const nonEmpty = guides.filter(Boolean);
-  if (nonEmpty.length === 0) return null;
-  const unique = [...new Set(nonEmpty)];
-  if (unique.length === 1) return unique[0];
-  return null;
-}
-
-function createGuideText(name, color) {
-  const text = document.createElement('span');
-  text.className = 'tv-guide-text';
-  text.textContent = name;
-  text.title = name;
-  applyTextColor(text, color);
-  return text;
 }
 
 function buildDayRow(dayInfo, today, onGradeHover) {
@@ -252,56 +207,28 @@ function buildDayRow(dayInfo, today, onGradeHover) {
 
   lines.forEach((line) => {
     const ev = document.createElement('div');
-    const title = line.event?.trim() ?? '';
-    if (title) {
-      const color = getEventColor(title);
-      const grade = extractGrade(title);
-      const useSheetColor = line.eventColor && line.eventColor !== '#000000';
-      ev.className = `tv-event${!useSheetColor && color !== 'default' ? ` color-${color}` : ''}`;
+    const title = line.event.trim();
+    const color = getEventColor(title);
+    const grade = extractGrade(title);
+    const useSheetColor = line.eventColor && line.eventColor !== '#000000';
+    ev.className = `tv-event${!useSheetColor && color !== 'default' ? ` color-${color}` : ''}`;
 
-      const text = document.createElement('span');
-      text.className = 'tv-event-text';
-      text.textContent = title;
-      text.title = title;
-      applyTextColor(text, line.eventColor);
-      ev.appendChild(text);
+    const text = document.createElement('span');
+    text.className = 'tv-event-text';
+    text.textContent = title;
+    text.title = title;
+    applyTextColor(text, line.eventColor);
+    ev.appendChild(text);
 
-      if (grade) {
-        ev.addEventListener('mouseenter', () => onGradeHover?.(grade));
-        ev.addEventListener('mouseleave', () => onGradeHover?.(null));
-      }
-    } else {
-      ev.className = 'tv-event tv-event-blank';
+    if (grade) {
+      ev.addEventListener('mouseenter', () => onGradeHover?.(grade));
+      ev.addEventListener('mouseleave', () => onGradeHover?.(null));
     }
 
     eventsCell.appendChild(ev);
   });
 
-  const guideCell = document.createElement('div');
-  guideCell.className = 'tv-guide';
-  const mergedGuide = getMergedGuide(lines);
-
-  if (mergedGuide) {
-    const el = document.createElement('span');
-    el.className = 'tv-guide-merged';
-    el.appendChild(createGuideText(
-      mergedGuide,
-      lines.find((line) => line.guide?.trim())?.guideColor,
-    ));
-    guideCell.appendChild(el);
-  } else {
-    lines.forEach((line) => {
-      const guide = line.guide?.trim() ?? '';
-      const el = document.createElement('span');
-      el.className = 'tv-guide-line';
-      if (guide) {
-        el.appendChild(createGuideText(guide, line.guideColor));
-      }
-      guideCell.appendChild(el);
-    });
-  }
-
-  row.append(dateCell, wdCell, eventsCell, guideCell);
+  row.append(dateCell, wdCell, eventsCell);
   return row;
 }
 
@@ -315,20 +242,56 @@ function applyScheduleRowHeights(root, leftDays, rightDays) {
     { body: bodies[1], days: rightDays },
   ].forEach(({ body, days }) => {
     if (!body) return;
-    layoutColumnRows(body, days, bodyHeight);
+    layoutColumnRows(body, days, bodyHeight, root);
   });
 }
 
-function layoutColumnRows(body, days, bodyHeight) {
+// Measures how many visual lines an event title needs at the given font size
+// and column width, so wrapped text gets enough row height instead of being
+// clipped by the fixed-height cell.
+function estimateWrappedLines(text, fontSizePx, widthPx) {
+  if (!text || widthPx <= 0) return 1;
+
+  let probe = estimateWrappedLines._probe;
+  if (!probe) {
+    probe = document.createElement('div');
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.style.pointerEvents = 'none';
+    probe.style.left = '-9999px';
+    probe.style.top = '0';
+    probe.style.wordBreak = 'keep-all';
+    probe.style.overflowWrap = 'break-word';
+    probe.style.fontWeight = '700';
+    document.body.appendChild(probe);
+    estimateWrappedLines._probe = probe;
+  }
+
+  probe.style.width = `${widthPx}px`;
+  probe.style.fontSize = `${fontSizePx}px`;
+  probe.style.lineHeight = '1.15';
+  probe.textContent = text;
+
+  const lineH = fontSizePx * 1.15;
+  return Math.max(1, Math.ceil(probe.scrollHeight / lineH - 0.15));
+}
+
+function layoutColumnRows(body, days, bodyHeight, root) {
   const rows = [...body.querySelectorAll('.tv-day-row')];
+  const eventsWidth = body.querySelector('.tv-events')?.clientWidth ?? 0;
+  const colWidth = Math.max(eventsWidth - EVENT_CELL_PAD_W, 0);
+  const { minPx } = getEventFontSizeRange(root);
+
   const specs = days.map((day, i) => {
     const lines = buildRowLines(day);
     const compact = isCompactDay(day);
+    const lineNeeds = lines.map((line) => estimateWrappedLines(line.event, minPx, colWidth));
+    const units = lineNeeds.reduce((sum, n) => sum + n, 0);
     return {
       row: rows[i],
-      lines,
+      lineNeeds,
       compact,
-      weight: compact ? 1 : Math.max(lines.length, 1),
+      weight: compact ? 1 : Math.max(units, 1),
     };
   });
 
@@ -337,31 +300,21 @@ function layoutColumnRows(body, days, bodyHeight) {
 
   const unitH = bodyHeight / totalWeight;
 
-  specs.forEach(({ row, lines, compact }) => {
+  specs.forEach(({ row, lineNeeds, compact }) => {
     if (!row) return;
 
-    const rowH = compact ? unitH : unitH * lines.length;
-    const lineCount = Math.max(lines.length, 1);
-    const perLine = rowH / lineCount;
+    const units = compact ? 1 : Math.max(lineNeeds.reduce((s, n) => s + n, 0), 1);
+    const rowH = unitH * units;
 
     row.style.height = `${rowH}px`;
     row.style.flex = 'none';
 
-    row.querySelectorAll('.tv-event').forEach((el) => {
-      el.style.height = `${perLine}px`;
-      el.style.minHeight = `${perLine}px`;
-      el.style.maxHeight = `${perLine}px`;
+    [...row.querySelectorAll('.tv-event')].forEach((el, idx) => {
+      const h = unitH * (lineNeeds[idx] ?? 1);
+      el.style.height = `${h}px`;
+      el.style.minHeight = `${h}px`;
+      el.style.maxHeight = `${h}px`;
       el.style.lineHeight = '1.15';
-    });
-    row.querySelectorAll('.tv-guide-line').forEach((el) => {
-      el.style.height = `${perLine}px`;
-      el.style.minHeight = `${perLine}px`;
-      el.style.maxHeight = `${perLine}px`;
-      el.style.lineHeight = '1.15';
-    });
-    row.querySelectorAll('.tv-guide-merged').forEach((el) => {
-      el.style.height = '100%';
-      el.style.minHeight = `${rowH}px`;
     });
   });
 }
@@ -437,70 +390,8 @@ function tightenLetterSpacing(textEl, cell) {
   }
 }
 
-function applyGuideCellFont(textEl, cell) {
-  const schoolSize = getSchoolInfoFontSize();
-  const pad = cellPadding(cell);
-  const maxH = cell.clientHeight - pad.h;
-  const heightCap = maxH > 0 ? Math.floor(maxH / 1.15) : GUIDE_FONT_MAX_PX;
-  const minPx = schoolSize;
-  const maxPx = Math.max(
-    minPx,
-    Math.min(GUIDE_FONT_MAX_PX, Math.round(schoolSize * GUIDE_FONT_BOOST), heightCap),
-  );
-
-  for (let size = maxPx; size >= minPx; size -= 1) {
-    applyCellTextStyle(textEl, size, { nowrap: true });
-    textEl.style.letterSpacing = '0px';
-    if (cellFits(textEl, cell)) {
-      applyGuideStyle(textEl);
-      return size;
-    }
-  }
-
-  applyCellTextStyle(textEl, minPx, { nowrap: true });
-  tightenLetterSpacing(textEl, cell);
-  applyGuideStyle(textEl);
-  return minPx;
-}
-
-function applyGuideStyle(textEl) {
-  textEl.style.fontWeight = '800';
-  textEl.style.textAlign = 'center';
-  textEl.style.width = '100%';
-  textEl.style.display = 'block';
-}
-
-let measureCtx = null;
-
-function measureTextWidth(text, fontSizePx) {
-  measureCtx ??= document.createElement('canvas').getContext('2d');
-  if (!measureCtx) return text.length * fontSizePx * 0.9;
-  measureCtx.font = `800 ${fontSizePx}px "Malgun Gothic", "Apple SD Gothic Neo", sans-serif`;
-  return measureCtx.measureText(text).width;
-}
-
-function syncGuideColumnWidth(root) {
-  const scale = getTvScale(root);
-  let maxW = REF_COL.guide * scale;
-
-  root.querySelectorAll('.tv-guide-text').forEach((el) => {
-    const text = el.textContent?.trim();
-    if (!text) return;
-    const px = Number.parseFloat(getComputedStyle(el).fontSize) || getSchoolInfoFontSize();
-    maxW = Math.max(maxW, measureTextWidth(text, px));
-  });
-
-  const guideHeader = root.querySelector('.tv-th.guide');
-  if (guideHeader?.textContent?.trim()) {
-    const headerPx = Number.parseFloat(getComputedStyle(root).getPropertyValue('--tv-header-font')) || 13;
-    maxW = Math.max(maxW, measureTextWidth(guideHeader.textContent.trim(), headerPx * 0.92));
-  }
-
-  root.style.setProperty('--tv-col-guide', `${Math.ceil(maxW) + 8}px`);
-}
-
 function cellPadding(cellEl) {
-  return cellEl.classList.contains('tv-event') ? { w: 6, h: 4 } : { w: 4, h: 2 };
+  return cellEl.classList.contains('tv-event') ? { w: EVENT_CELL_PAD_W, h: 4 } : { w: 4, h: 2 };
 }
 
 export function applyColumnFonts(root) {
@@ -514,20 +405,8 @@ export function applyColumnFonts(root) {
     }))
     .filter((item) => item.cell);
 
-  const guideItems = [...root.querySelectorAll('.tv-guide-text')]
-    .filter((el) => el.textContent?.trim())
-    .map((textEl) => ({
-      textEl,
-      cell: textEl.closest('.tv-guide-line, .tv-guide-merged'),
-    }))
-    .filter((item) => item.cell);
-
   eventItems.forEach((item) => {
     applyEventCellFont(item.textEl, item.cell, root);
-  });
-
-  guideItems.forEach((item) => {
-    applyGuideCellFont(item.textEl, item.cell);
   });
 
   return targetSize;
@@ -553,6 +432,5 @@ export function getScheduleOptions(meta = {}) {
     year: meta.year ?? now.getFullYear(),
     month: meta.month ?? now.getMonth() + 1,
     eventColumnLabel: columns.events ?? meta.eventColumnLabel ?? '주요활동',
-    guideColumnLabel: columns.guide ?? meta.guideColumnLabel ?? '생활지도',
   };
 }
