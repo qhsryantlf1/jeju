@@ -66,7 +66,7 @@ function syncScheduleScale(root) {
     panel.clientWidth / REF_PANEL.width,
     panel.clientHeight / REF_PANEL.height,
   );
-  const s = Math.max(0.95, Math.min(2.7, scale));
+  const s = Math.max(0.95, Math.min(3.5, scale));
 
   root.style.setProperty('--tv-scale', s.toFixed(3));
   root.style.setProperty('--tv-col-day', `${Math.round(REF_COL.day * s)}px`);

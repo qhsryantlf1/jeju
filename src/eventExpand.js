@@ -4,7 +4,7 @@ function pickColor(colors, idx, fallback = DEFAULT_COLOR) {
   return colors?.[idx] ?? colors?.[0] ?? fallback;
 }
 
-/** 주요활동 문자열을 줄바꿈·슬래시·중점 구분으로 분리 */
+/** 주요활동 문자열을 줄바꿈·슬래시 구분으로 분리 */
 function splitActivityText(text) {
   const normalized = String(text ?? '')
     .replace(/\r\n?/g, '\n')
@@ -17,9 +17,6 @@ function splitActivityText(text) {
 
   const byNewline = normalized.split(/\n+/).map((s) => s.trim()).filter(Boolean);
   if (byNewline.length > 1) return byNewline;
-
-  const byDot = normalized.split(/\s*[·•]\s*/).map((s) => s.trim()).filter(Boolean);
-  if (byDot.length > 1) return byDot;
 
   return [normalized];
 }

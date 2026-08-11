@@ -73,10 +73,6 @@ def split_activity_text(text: str) -> list[str]:
     if len(by_newline) > 1:
         return by_newline
 
-    by_dot = [p.strip() for p in re.split(r"\s*[·•]\s*", text) if p.strip()]
-    if len(by_dot) > 1:
-        return by_dot
-
     return [text]
 
 
