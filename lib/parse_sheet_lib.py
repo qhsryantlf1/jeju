@@ -512,7 +512,7 @@ def parse_google_sheet(sheet_id: str, tab_name: str) -> dict:
         "meta": {
             "source": "google-sheet",
             "sheetId": sheet_id,
-            "tab": tab_name,
+            "tab": worksheet.title,
             **meta,
         },
     }

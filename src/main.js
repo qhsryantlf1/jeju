@@ -3,7 +3,7 @@ import { fetchSheetStatus } from './sheetStatus.js';
 import { saveUploadedCalendar, loadUploadedCalendar } from './calendarStorage.js';
 import { fetchSharedCalendar } from './calendarServer.js';
 import { renderTvSchedule, getScheduleOptions, syncStatusLayout, reapplyScheduleFonts } from './tvSchedule.js';
-import { renderStatusPanel, setStatusGradeHighlight, refitStatusTables } from './statusPanel.js';
+import { renderStatusPanel, refitStatusTables } from './statusPanel.js';
 
 const WEEKDAY_LABELS = ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일'];
 
@@ -11,12 +11,14 @@ const pdfViewerEl = document.getElementById('pdf-viewer');
 const statusClockEl = document.getElementById('status-clock');
 const clockDateEl = statusClockEl?.querySelector('.status-clock-date');
 const clockTimeEl = statusClockEl?.querySelector('.status-clock-time');
+const clockSyncEl = statusClockEl?.querySelector('.status-clock-sync');
 let scheduleMeta = {};
 let lastTodayKey = '';
 let todayRefreshTimer = null;
 let cachedCalendarData = null;
 let calendarDataHash = '';
 let statusDataHash = '';
+let lastSyncedAt = null;
 
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 const toast = document.getElementById('toast');
@@ -26,8 +28,24 @@ function showViewerError(message) {
 }
 
 function renderCachedSchedule() {
-  renderTvSchedule(pdfViewerEl, cachedCalendarData, setStatusGradeHighlight, getScheduleOptions(scheduleMeta));
+  renderTvSchedule(pdfViewerEl, cachedCalendarData, getScheduleOptions(scheduleMeta));
   lastTodayKey = new Date().toDateString();
+}
+
+function markSynced() {
+  lastSyncedAt = new Date();
+  updateSyncIndicator();
+}
+
+function updateSyncIndicator() {
+  if (!clockSyncEl) return;
+  if (!lastSyncedAt) {
+    clockSyncEl.textContent = '';
+    return;
+  }
+  const hh = String(lastSyncedAt.getHours()).padStart(2, '0');
+  const mm = String(lastSyncedAt.getMinutes()).padStart(2, '0');
+  clockSyncEl.textContent = `동기화 ${hh}:${mm}`;
 }
 
 /** PDF 파싱은 최후 수단이므로 pdfjs-dist는 이때만 동적 로드 */
@@ -57,10 +75,12 @@ function applyCalendarData(data, meta = {}) {
 async function loadSheetCalendar() {
   const sheet = await fetchSheetCalendar();
   applyCalendarData(sheet.data, sheet.meta ?? {});
+  markSynced();
 }
 
 async function loadSheetStatus() {
   const status = await fetchSheetStatus();
+  markSynced();
   const hash = JSON.stringify(status);
   if (hash === statusDataHash) return;
 

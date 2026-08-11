@@ -1,4 +1,4 @@
-import { getEventColor, extractGrade, isHolidayEvent } from './colorTag.js';
+import { classifyEventColor } from './colorTag.js';
 import { expandDayEvents } from './eventExpand.js';
 import { getSchoolInfoFontSize } from './statusPanel.js';
 
@@ -12,7 +12,7 @@ const EVENT_TV_BOOST = 1.3;
 const EVENT_CELL_PAD_W = 6;
 const EVENT_CELL_PAD_H = 4;
 
-export function renderTvSchedule(container, dayData, onGradeHover, options = {}) {
+export function renderTvSchedule(container, dayData, options = {}) {
   const year = options.year ?? 2026;
   const month = options.month ?? 6;
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -39,8 +39,8 @@ export function renderTvSchedule(container, dayData, onGradeHover, options = {})
     events: options.eventColumnLabel ?? '주요활동',
   };
 
-  root.appendChild(buildColumn(leftDays, today, onGradeHover, columnLabels));
-  root.appendChild(buildColumn(rightDays, today, onGradeHover, columnLabels));
+  root.appendChild(buildColumn(leftDays, today, columnLabels));
+  root.appendChild(buildColumn(rightDays, today, columnLabels));
 
   container.appendChild(root);
 
@@ -116,7 +116,7 @@ function formatScheduleTitle() {
   return `${new Date().getMonth() + 1}월 학사 운영 계획`;
 }
 
-function buildColumn(days, today, onGradeHover, columnLabels = {}) {
+function buildColumn(days, today, columnLabels = {}) {
   const eventLabel = columnLabels.events ?? '주요활동';
 
   const col = document.createElement('div');
@@ -146,7 +146,7 @@ function buildColumn(days, today, onGradeHover, columnLabels = {}) {
   body.className = 'tv-col-body';
 
   for (const dayInfo of days) {
-    body.appendChild(buildDayRow(dayInfo, today, onGradeHover));
+    body.appendChild(buildDayRow(dayInfo, today));
   }
 
   col.appendChild(body);
@@ -179,11 +179,12 @@ function isCompactDay(dayInfo) {
   return !hasActivity(dayInfo);
 }
 
-function buildDayRow(dayInfo, today, onGradeHover) {
+function buildDayRow(dayInfo, today) {
   const row = document.createElement('div');
   const lines = buildRowLines(dayInfo);
   const isSaturday = dayInfo.weekday === '토';
-  const isHoliday = lines.some((line) => line.event && isHolidayEvent(line.event));
+  const isHoliday = classifyEventColor(dayInfo.dayColor) === 'red'
+    || lines.some((line) => classifyEventColor(line.eventColor) === 'red');
   const isCompact = isCompactDay(dayInfo);
   const isToday = today
     && today.day === dayInfo.day
@@ -209,10 +210,8 @@ function buildDayRow(dayInfo, today, onGradeHover) {
   lines.forEach((line) => {
     const ev = document.createElement('div');
     const title = line.event.trim();
-    const color = getEventColor(title);
-    const grade = extractGrade(title);
-    const useSheetColor = line.eventColor && line.eventColor !== '#000000';
-    ev.className = `tv-event${!useSheetColor && color !== 'default' ? ` color-${color}` : ''}`;
+    const color = classifyEventColor(line.eventColor);
+    ev.className = `tv-event${color !== 'default' ? ` color-${color}` : ''}`;
 
     const text = document.createElement('span');
     text.className = 'tv-event-text';
@@ -220,11 +219,6 @@ function buildDayRow(dayInfo, today, onGradeHover) {
     text.title = title;
     applyTextColor(text, line.eventColor);
     ev.appendChild(text);
-
-    if (grade) {
-      ev.addEventListener('mouseenter', () => onGradeHover?.(grade));
-      ev.addEventListener('mouseleave', () => onGradeHover?.(null));
-    }
 
     eventsCell.appendChild(ev);
   });

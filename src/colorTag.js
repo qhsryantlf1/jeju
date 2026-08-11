@@ -1,29 +1,29 @@
-const RULES = [
-  { color: 'red', keywords: ['지방선거일', '현충일', '선거일', '공휴일'] },
-  { color: 'pink', keywords: ['전일제'] },
-];
+function hexToHue(hex) {
+  const clean = String(hex ?? '').replace('#', '');
+  if (clean.length !== 6) return null;
 
-const PRIORITY = { red: 0, pink: 1, default: 2 };
+  const r = parseInt(clean.slice(0, 2), 16) / 255;
+  const g = parseInt(clean.slice(2, 4), 16) / 255;
+  const b = parseInt(clean.slice(4, 6), 16) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta < 0.08) return null;
 
-export const HOLIDAY_KEYWORDS = ['지방선거일', '현충일', '선거일', '공휴일'];
-
-export function isHolidayEvent(title) {
-  return HOLIDAY_KEYWORDS.some((k) => title.includes(k));
+  let h;
+  if (max === r) h = ((g - b) / delta) % 6;
+  else if (max === g) h = (b - r) / delta + 2;
+  else h = (r - g) / delta + 4;
+  h *= 60;
+  if (h < 0) h += 360;
+  return h;
 }
 
-export function getEventColor(title) {
-  let best = 'default';
-  for (const rule of RULES) {
-    if (rule.keywords.some((kw) => title.includes(kw))) {
-      if (PRIORITY[rule.color] < PRIORITY[best]) {
-        best = rule.color;
-      }
-    }
-  }
-  return best;
-}
-
-export function extractGrade(title) {
-  const match = title.match(/(\d)학년/);
-  return match ? parseInt(match[1], 10) : null;
+/** 시트에서 지정한 실제 글자색의 색조를 기준으로 강조 색상을 분류한다. */
+export function classifyEventColor(hex) {
+  const hue = hexToHue(hex);
+  if (hue === null) return 'default';
+  if (hue >= 340 || hue < 15) return 'red';
+  if (hue >= 280 && hue < 340) return 'pink';
+  return 'default';
 }

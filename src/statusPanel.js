@@ -1,12 +1,3 @@
-function inferGrade(value) {
-  const text = String(value ?? '').trim();
-  if (/^[123]-\d/.test(text)) return text.charAt(0);
-  if (text.includes('1학년')) return '1';
-  if (text.includes('2학년')) return '2';
-  if (text.includes('3학년')) return '3';
-  return null;
-}
-
 function applyCellStyle(td, cell) {
   if (cell.bg) td.style.backgroundColor = cell.bg;
   if (cell.color) td.style.color = cell.color;
@@ -31,11 +22,6 @@ function buildTable(tableData, { headerRowIndex = null, gradeRows = false } = {}
 
   tableData.rows.forEach((row, rowIndex) => {
     const tr = document.createElement('tr');
-
-    if (gradeRows) {
-      const grade = row.cells.map((cell) => inferGrade(cell.value)).find(Boolean);
-      if (grade) tr.dataset.grade = grade;
-    }
 
     if (headerRowIndex !== null && rowIndex === headerRowIndex) {
       tr.className = 'status-header-row';
@@ -183,12 +169,6 @@ export function renderStatusPanel(payload) {
       fitTableFont(schoolTable, 16, 8);
       resolve();
     });
-  });
-}
-
-export function setStatusGradeHighlight(grade) {
-  document.querySelectorAll('#student-status tr[data-grade]').forEach((row) => {
-    row.classList.toggle('grade-active', grade !== null && row.dataset.grade === String(grade));
   });
 }
 
